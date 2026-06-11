@@ -687,7 +687,12 @@ export class MatrixConnector {
     // MATRIX_ALLOW_SELF_COMMANDS=true, own messages starting with "/" are
     // processed; everything else (including the bot's own replies) is dropped.
     const isSelf = sender === this.ownUserId;
-    if (isSelf && !config.matrix.allowSelfCommands) return;
+    if (
+      isSelf &&
+      !config.matrix.allowSelfCommands &&
+      !config.matrix.noMentionUsers.includes(sender)
+    )
+      return;
 
     const eventTs = event.origin_server_ts as number | undefined;
     if (eventTs !== undefined && eventTs < this.startupTs) return;
