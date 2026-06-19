@@ -3,6 +3,11 @@
 // DM or @mention that isn't a command gets this notice pointing to the command
 // room(s) and an optional contact.
 
+// Default command-room link, hardcoded so the notice always points somewhere
+// even if MATRIX_COMMAND_ROOMS_URL is unset.
+const DEFAULT_COMMAND_ROOMS_URL =
+  "https://matrix.to/#/!HJfKDjJlwwnTMlEvEM:agent.dinum.tchap.gouv.fr?via=agent.dinum.tchap.gouv.fr";
+
 export interface CommandOnlyNoticeOptions {
   commandRooms: string[];
   commandRoomsLabel: string | undefined;
@@ -18,10 +23,9 @@ export function buildCommandOnlyNotice({
   contact,
   commands,
 }: CommandOnlyNoticeOptions): string {
+  const url = commandRoomsUrl ?? DEFAULT_COMMAND_ROOMS_URL;
   const where = commandRoomsLabel
-    ? commandRoomsUrl
-      ? `[${commandRoomsLabel}](${commandRoomsUrl})`
-      : `\`${commandRoomsLabel}\``
+    ? `[${commandRoomsLabel}](${url})`
     : commandRooms.length > 0
       ? commandRooms.map((r) => `\`${r}\``).join(", ")
       : "le salon dédié aux commandes";
