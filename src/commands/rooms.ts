@@ -567,21 +567,24 @@ async function listRooms(
   };
 }
 
-// List the sub-spaces of the managed space.
+// List the sub-spaces directly under `spaceId`. `label` names it in the reply
+// (the managed space by default, or a sub-espace when `/espace list <espace>`).
 async function listSpaces(
   client: MatrixClient,
   spaceId: string,
+  label?: string | null,
 ): Promise<RoomCmdResult> {
+  const where = label ? `l'espace **${label}**` : "l'espace géré";
   const spaces = (await listChildren(client, spaceId)).filter(
     (c) => c.isSpace && c.name.trim(),
   );
   if (!spaces.length) {
-    return { reaction: "📭", message: "📭 Aucun espace dans l'espace géré." };
+    return { reaction: "📭", message: `📭 Aucun sous-espace dans ${where}.` };
   }
   const lines = spaces.map((s) => `- **${s.name}**`).join("\n");
   return {
     reaction: "📋",
-    message: `🌌 Espaces (${spaces.length}) :\n${lines}`,
+    message: `🌌 Sous-espaces de ${where} (${spaces.length}) :\n${lines}`,
   };
 }
 
@@ -611,6 +614,7 @@ function spacesHelpMessage(): RoomCmdResult {
 | Sous-commande | Effet |
 |---|---|
 | \`/espace list\` | Liste les sous-espaces de l'espace géré |
+| \`/espace list <espace>\` | Liste les sous-espaces d'un sous-espace (nom ou ID, à n'importe quelle profondeur) |
 | \`/espace create <nom>\` | Crée un sous-espace et le rattache à l'espace géré |
 | \`/espace create <nom> <espace-parent>\` | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom ou ID). Nom avec des espaces : entre guillemets — \`/espace create <nom> "Pole Tech"\` |
 | \`/espace delete <nom>\` | Supprime un sous-espace **vide** (réservé à un utilisateur autorisé, en MP) |
@@ -650,8 +654,20 @@ export async function handleSpacesCommand(
 
   try {
     switch (sub) {
-      case "list":
-        return await listSpaces(client, managedSpaceId);
+      case "list": {
+        // No arg → sub-espaces of the managed space. `/espace list <espace>` →
+        // sub-espaces of that (nested) espace, resolved anywhere in the tree.
+        const target = rawArg.replace(/^["']|["']$/g, "").trim();
+        if (!target) return await listSpaces(client, managedSpaceId);
+        const sub = await resolveSubSpace(client, managedSpaceId, target);
+        if (!sub) {
+          return {
+            reaction: "❌",
+            message: `❌ Aucun espace nommé **${target}** sous l'espace géré. Tape \`/espace list\`.`,
+          };
+        }
+        return await listSpaces(client, sub.roomId, sub.name);
+      }
       case "create":
       case "new": {
         if (!rawArg)
