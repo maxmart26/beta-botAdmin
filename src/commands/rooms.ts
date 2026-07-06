@@ -143,27 +143,37 @@ async function isRoomMember(
   }
 }
 
-// Find a sub-space of the managed space by its room ID (`!id:server`) or by its
-// name (case-insensitive). The ID form lets callers target a space whose name is
-// ambiguous or contains spaces.
+// Find a sub-space anywhere under the managed space by its room ID (`!id:server`)
+// or name (case-insensitive). The ID form lets callers target a space whose name
+// is ambiguous or contains spaces. The search is a breadth-first walk of the
+// whole space tree, so a nested espace (child of a child) resolves too — e.g.
+// `/espace create X test` where `test` sits under another sub-espace. On a name
+// clash the shallowest match wins (BFS). A `visited` set makes it cycle-safe
+// (the Matrix space graph may contain loops).
 async function resolveSubSpace(
   client: MatrixClient,
   managedSpaceId: string,
   idOrName: string,
 ): Promise<SpaceChild | null> {
-  const children = await listChildren(client, managedSpaceId);
   const needle = idOrName.toLowerCase();
   // A room ID always starts with `!`; match by ID in that case, otherwise by name.
   const byId = idOrName.startsWith("!");
-  return (
-    children.find(
-      (c) =>
-        c.isSpace &&
-        (byId
-          ? c.roomId.toLowerCase() === needle
-          : c.name.toLowerCase() === needle),
-    ) ?? null
-  );
+  const visited = new Set<string>([managedSpaceId]);
+  let frontier = await listChildren(client, managedSpaceId);
+  while (frontier.length) {
+    const next: SpaceChild[] = [];
+    for (const c of frontier) {
+      if (visited.has(c.roomId)) continue;
+      visited.add(c.roomId);
+      if (!c.isSpace) continue;
+      if (byId ? c.roomId.toLowerCase() === needle : c.name.toLowerCase() === needle) {
+        return c;
+      }
+      next.push(...(await listChildren(client, c.roomId)));
+    }
+    frontier = next;
+  }
+  return null;
 }
 
 // Parse a `<nom> [espace]` argument into a room name and an optional target
@@ -390,6 +400,74 @@ async function createSpace(
   };
 }
 
+// The parent spaces a space is attached to (m.space.parent state, non-empty
+// content). Used to detach a space from every parent before deleting it.
+async function spaceParents(
+  client: MatrixClient,
+  spaceId: string,
+): Promise<string[]> {
+  const state = (await client.getRoomState(spaceId)) as StateEvent[];
+  const parents: string[] = [];
+  for (const e of state) {
+    if (
+      e.type === "m.space.parent" &&
+      typeof e.state_key === "string" &&
+      e.content &&
+      Object.keys(e.content).length > 0
+    ) {
+      parents.push(e.state_key);
+    }
+  }
+  return parents;
+}
+
+// Delete a sub-space: resolve it anywhere under the managed space, refuse if it
+// still holds rooms or sub-espaces (no cascade — the caller must empty it first),
+// then detach it from every parent and the bot leaves. Gated to DM by the caller.
+async function closeSpace(
+  client: MatrixClient,
+  managedSpaceId: string,
+  nameOrId: string,
+  botUserId: string,
+): Promise<RoomCmdResult> {
+  const target = await resolveSubSpace(client, managedSpaceId, nameOrId);
+  if (!target) {
+    return {
+      reaction: "❌",
+      message: `❌ Aucun espace nommé **${nameOrId}** sous l'espace géré. Tape \`/espace list\`.`,
+    };
+  }
+  const kids = (await listChildren(client, target.roomId)).filter((c) =>
+    c.name.trim(),
+  );
+  if (kids.length) {
+    return {
+      reaction: "⚠️",
+      message: `⚠️ L'espace **${target.name}** n'est pas vide (${kids.length} élément(s)). Supprime ou déplace d'abord son contenu.`,
+    };
+  }
+  const parents = await spaceParents(client, target.roomId);
+  // Remove the child link on every parent that references the space, then
+  // detachAndClose (via the primary parent) kicks members and the bot leaves.
+  for (const p of parents) {
+    try {
+      await client.sendStateEvent(p, "m.space.child", target.roomId, {});
+    } catch {
+      // not attached / no power — proceed
+    }
+  }
+  const kicked = await detachAndClose(
+    client,
+    parents[0] ?? managedSpaceId,
+    target.roomId,
+    botUserId,
+  );
+  return {
+    reaction: "✅",
+    message: `🗑 Espace **${target.name}** supprimé : détaché, ${kicked} membre(s) expulsé(s), le bot a quitté.`,
+  };
+}
+
 // Requester's power level in a room (users[id] → users_default → 0).
 async function powerLevelOf(
   client: MatrixClient,
@@ -535,6 +613,7 @@ function spacesHelpMessage(): RoomCmdResult {
 | \`/espace list\` | Liste les sous-espaces de l'espace géré |
 | \`/espace create <nom>\` | Crée un sous-espace et le rattache à l'espace géré |
 | \`/espace create <nom> <espace-parent>\` | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom ou ID). Nom avec des espaces : entre guillemets — \`/espace create <nom> "Pole Tech"\` |
+| \`/espace delete <nom>\` | Supprime un sous-espace **vide** (réservé à un utilisateur autorisé, en MP) |
 
 Le \`<nom>\` peut contenir des espaces. Pour cibler un **<espace-parent>** dont le nom contient des espaces, mets-le entre guillemets en dernier ; sinon le dernier mot est traité comme parent seulement s'il correspond au nom ou à l'ID d'un sous-espace existant.
 
@@ -549,6 +628,10 @@ export async function handleSpacesCommand(
   botUserId: string,
   senderUserId: string,
   text: string,
+  // `/espace delete` is gated: the connector only sets this true for an
+  // allow-listed user in a DM (MATRIX_DM_TEST_USERS). Everywhere else it stays
+  // false and delete is refused.
+  allowDelete = false,
 ): Promise<RoomCmdResult> {
   if (!managedSpaceId) {
     return {
@@ -630,6 +713,26 @@ export async function handleSpacesCommand(
           botUserId,
           parentLabel,
         );
+      }
+      case "delete":
+      case "close":
+      case "supprimer": {
+        if (!allowDelete) {
+          return {
+            reaction: "⛔",
+            message:
+              "⛔ `/espace delete` est réservé à un utilisateur autorisé, en message privé (MP) avec le bot.",
+          };
+        }
+        // The whole argument is the espace name; strip one layer of wrapping
+        // quotes so a name with spaces works (`"Pole Tech"`).
+        const name = rawArg.replace(/^["']|["']$/g, "").trim();
+        if (!name)
+          return {
+            reaction: "❌",
+            message: '❌ Usage : `/espace delete <nom>`',
+          };
+        return await closeSpace(client, managedSpaceId, name, botUserId);
       }
       case "help":
       case "aide":
