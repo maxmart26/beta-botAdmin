@@ -326,14 +326,16 @@ async function createRoom(
   };
 }
 
-// Create a Space (a room with type m.space) and attach it under the managed
-// space, so `/salon create <nom> <cet-espace>` can target it.
+// Create a Space (a room with type m.space) and attach it under a parent space
+// (the managed space, or a sub-espace for nesting), so `/salon create <nom>
+// <cet-espace>` can target it. `parentLabel` names the parent for the reply.
 async function createSpace(
   client: MatrixClient,
   parentSpaceId: string,
   name: string,
   inviteUserId: string,
   botUserId: string,
+  parentLabel?: string | null,
 ): Promise<RoomCmdResult> {
   const existing = await listChildren(client, parentSpaceId);
   if (
@@ -379,9 +381,12 @@ async function createSpace(
     via: [serverName(spaceId)],
   });
 
+  const where = parentLabel
+    ? `l'espace **${parentLabel}**`
+    : "l'espace géré";
   return {
     reaction: "✅",
-    message: `🌌 Espace **${name}** créé et rattaché à l'espace géré.\nTu peux y créer des salons : \`/salon create <nom> ${name}\`\nID : \`${spaceId}\``,
+    message: `🌌 Espace **${name}** créé et rattaché à ${where}.\nTu peux y créer des salons : \`/salon create <nom> ${name}\`\nID : \`${spaceId}\``,
   };
 }
 
@@ -529,6 +534,9 @@ function spacesHelpMessage(): RoomCmdResult {
 |---|---|
 | \`/espace list\` | Liste les sous-espaces de l'espace géré |
 | \`/espace create <nom>\` | Crée un sous-espace et le rattache à l'espace géré |
+| \`/espace create <nom> <espace-parent>\` | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom ou ID). Nom avec des espaces : entre guillemets — \`/espace create <nom> "Pole Tech"\` |
+
+Le \`<nom>\` peut contenir des espaces. Pour cibler un **<espace-parent>** dont le nom contient des espaces, mets-le entre guillemets en dernier ; sinon le dernier mot est traité comme parent seulement s'il correspond au nom ou à l'ID d'un sous-espace existant.
 
 Ensuite, range un salon dedans : \`/salon create <nom-salon> <nom-espace>\`.`,
   };
@@ -552,26 +560,77 @@ export async function handleSpacesCommand(
 
   const m = text.trim().match(/^\/espace\s+(\S+)\s*([\s\S]*)$/i);
   const sub = (m?.[1] ?? "help").toLowerCase();
-  const arg = (m?.[2] ?? "").trim().replace(/^["']|["']$/g, "").trim();
+  // Raw argument, NOT wrapping-quote-stripped: create parses the trailing espace
+  // itself (a quoted parent espace can contain spaces), so stripping the outer
+  // quote here would corrupt `<nom> "<espace-parent>"`.
+  const rawArg = (m?.[2] ?? "").trim();
 
   try {
     switch (sub) {
       case "list":
         return await listSpaces(client, managedSpaceId);
       case "create":
-      case "new":
-        if (!arg)
+      case "new": {
+        if (!rawArg)
           return {
             reaction: "❌",
-            message: "❌ Usage : `/espace create <nom>`",
+            message: '❌ Usage : `/espace create <nom> ["espace-parent"]`',
+          };
+        // `<nom> [espace-parent]`: same grammar as `/salon create`. A trailing
+        // quoted segment (or a bare last word that names an existing sub-espace)
+        // nests the new espace inside that parent instead of the managed space.
+        const { roomName: parsedName, spaceCandidate, explicit } =
+          parseRoomAndSpace(rawArg);
+        let parentSpaceId = managedSpaceId;
+        let parentLabel: string | null = null;
+        let spaceName = parsedName;
+        if (spaceCandidate) {
+          const parent = await resolveSubSpace(
+            client,
+            managedSpaceId,
+            spaceCandidate,
+          );
+          if (parent) {
+            // Only members of the parent espace may nest a sub-espace inside it.
+            // The bot itself (self command) is exempt.
+            if (
+              senderUserId !== botUserId &&
+              !(await isRoomMember(client, parent.roomId, senderUserId))
+            ) {
+              return {
+                reaction: "⛔",
+                message: `⛔ Tu n'es pas membre de l'espace **${parent.name}**, tu ne peux pas y créer de sous-espace.`,
+              };
+            }
+            parentSpaceId = parent.roomId;
+            parentLabel = parent.name;
+            // Bare last-word match: drop that word from the espace name. (Quoted
+            // parent already gave us the prefix as `parsedName`.)
+            if (!explicit)
+              spaceName = rawArg.split(/\s+/).slice(0, -1).join(" ");
+          } else if (explicit) {
+            // Quoted parent that doesn't exist: don't silently turn it into the
+            // espace name — the intent was explicit.
+            return {
+              reaction: "❌",
+              message: `❌ Espace parent introuvable : **${spaceCandidate}**. Tape \`/espace list\` pour voir les sous-espaces.`,
+            };
+          }
+        }
+        if (!spaceName)
+          return {
+            reaction: "❌",
+            message: '❌ Usage : `/espace create <nom> ["espace-parent"]`',
           };
         return await createSpace(
           client,
-          managedSpaceId,
-          arg,
+          parentSpaceId,
+          spaceName,
           senderUserId,
           botUserId,
+          parentLabel,
         );
+      }
       case "help":
       case "aide":
         return spacesHelpMessage();

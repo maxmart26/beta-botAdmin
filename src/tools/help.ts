@@ -126,6 +126,7 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 |---|---|---|
 | \`/espace list\` | tout le monde | Liste les sous-espaces de l'espace géré |
 | \`/espace create <nom>\` | tout le monde | Crée un sous-espace et le rattache à l'espace géré |
+| \`/espace create <nom> <espace-parent>\` | membre de l'espace parent | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`/espace create <nom> "Pole Tech"\` |
 
 ## Si quelque chose ne marche pas
 
