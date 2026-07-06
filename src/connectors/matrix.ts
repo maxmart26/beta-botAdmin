@@ -1021,12 +1021,16 @@ export class MatrixConnector {
       }
 
       if (text === "/espace" || text.startsWith("/espace ")) {
+        // `/espace delete` only for an allow-listed user in a DM.
+        const allowDelete =
+          isDM && config.matrix.dmTestUsers.includes(sender);
         const result = await handleSpacesCommand(
           this.client,
           config.matrix.managedSpace,
           this.ownUserId,
           sender,
           text,
+          allowDelete,
         );
         await this.sendReaction(roomId, userEventId, result.reaction);
         await this.sendMessage(roomId, result.message, userEventId, threadRoot);
