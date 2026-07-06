@@ -21,6 +21,10 @@ export const config = {
     deviceId: process.env["MATRIX_DEVICE_ID"],
     allowedRooms: optionalList("MATRIX_ALLOWED_ROOMS"),
     commandRooms: optionalList("MATRIX_COMMAND_ROOMS"),
+    // Users allowed to run slash commands via a direct message (DM) with the
+    // bot, bypassing the MATRIX_COMMAND_ROOMS restriction. Intended for testing
+    // without polluting a shared command room. Comma-separated mxids.
+    dmTestUsers: optionalList("MATRIX_DM_TEST_USERS"),
     commandRoomsLabel: process.env["MATRIX_COMMAND_ROOMS_LABEL"],
     commandRoomsUrl: process.env["MATRIX_COMMAND_ROOMS_URL"],
     dimailRooms: optionalList("MATRIX_DIMAIL_ROOMS"),

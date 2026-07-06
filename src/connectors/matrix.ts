@@ -893,7 +893,17 @@ export class MatrixConnector {
 
     if (isSlashCommand) {
       const commandRooms = config.matrix.commandRooms;
-      if (commandRooms.length > 0 && !commandRooms.includes(roomId)) {
+      // DM test bypass: an allow-listed user may run commands in a direct
+      // message with the bot, skipping the MATRIX_COMMAND_ROOMS gate. Lets you
+      // test without posting in a shared command room.
+      const dmBypass =
+        config.matrix.dmTestUsers.includes(sender) &&
+        (await this.isDMRoom(roomId));
+      if (
+        !dmBypass &&
+        commandRooms.length > 0 &&
+        !commandRooms.includes(roomId)
+      ) {
         await this.sendReaction(roomId, userEventId, "⛔");
         const cmd = text.split(/\s+/)[0] || "/?";
         const where = config.matrix.commandRoomsLabel
