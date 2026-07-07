@@ -33,13 +33,6 @@ export const config = {
     // MATRIX_COMMAND_ROOMS. Comma-separated room IDs.
     opsRooms: optionalList("MATRIX_OPS_ROOMS"),
     adminUsers: optionalList("MATRIX_ADMIN_USERS"),
-    // Email domains allowed to run /emails. Tchap encodes the email in the mxid
-    // localpart (`@prenom.nom-beta.gouv.fr:server`), so the gate matches the
-    // `-<domain>` suffix. Override via MATRIX_EMAILS_ALLOWED_DOMAINS (comma-sep).
-    emailsAllowedDomains:
-      optionalList("MATRIX_EMAILS_ALLOWED_DOMAINS").length > 0
-        ? optionalList("MATRIX_EMAILS_ALLOWED_DOMAINS")
-        : ["beta.gouv.fr", "numerique.gouv.fr", "modernisation.gouv.fr"],
     // Let the bot's own account trigger slash commands (e.g. an automation
     // like n8n posting with the same account — you can't @mention yourself).
     // Only messages starting with "/" are processed, so the bot's own replies
