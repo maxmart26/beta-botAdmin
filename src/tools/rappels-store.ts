@@ -113,15 +113,18 @@ export async function upsertInscription(input: {
 
 // Flip a user's status (e.g. to `erreur` when their CalDAV stops working, or
 // `désactivé` on /rappels-stop).
+// Returns true if an inscription existed and was updated, false if the user
+// had none (lets the caller distinguish "unsubscribed" from "was never in").
 export async function setStatut(
   matrixUserId: string,
   statut: Statut,
-): Promise<void> {
+): Promise<boolean> {
   const existing = await findInscription(matrixUserId);
-  if (!existing) return;
+  if (!existing) return false;
   await updateRecords(config.grist.tableInscriptions, [
     { id: existing.rowId, fields: { [C.statut]: statut } },
   ]);
+  return true;
 }
 
 // ─── Anti-duplicate log (RappelsEnvoyes) ─────────────────────────────────────
