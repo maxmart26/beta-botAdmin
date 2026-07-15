@@ -25,6 +25,7 @@ import {
 } from "../commands/rappels.js";
 import { testAccess } from "../connectors/caldav.js";
 import { upsertInscription, setStatut } from "../tools/rappels-store.js";
+import { runReminderTick } from "../tools/rappels-scheduler.js";
 import { buildHelp, buildOpsHelp } from "../tools/help.js";
 
 // Publicly advertised commands (shown in /help, the generic notice and the
@@ -264,6 +265,7 @@ export class MatrixConnector {
   private dmRooms = new Set<string>();
   private pendingVerif = new Map<string, VerifState>();
   private pendingRappels = new PendingInscriptions();
+  private reminderTimer?: ReturnType<typeof setInterval>;
   private startupTs = Date.now();
 
   constructor() {}
@@ -358,10 +360,65 @@ export class MatrixConnector {
 
     await this.loadDirectRooms();
 
+    this.startReminderScheduler();
+
     process.on("SIGINT", () => {
+      if (this.reminderTimer) clearInterval(this.reminderTimer);
       this.client.stop();
       process.exit(0);
     });
+  }
+
+  // Public wrapper so the reminder scheduler can post messages.
+  async sendRoomMessage(roomId: string, text: string): Promise<void> {
+    await this.sendMessage(roomId, text);
+  }
+
+  // Send a one-off notice to the first configured admin, via DM.
+  private async notifyAdmin(text: string): Promise<void> {
+    const admin = config.matrix.adminUsers[0];
+    if (!admin) return;
+    try {
+      const dm = await this.client.dms.getOrCreateDm(admin);
+      this.dmRooms.add(dm);
+      await this.sendMessage(dm, text);
+    } catch (err) {
+      console.error("[Matrix] notifyAdmin failed:", err);
+    }
+  }
+
+  // Start the meeting-reminder scheduler (docs/rappels-calendrier.md §5.2): a
+  // tick every `intervalMin` minutes. Runs one tick shortly after startup too.
+  private startReminderScheduler(): void {
+    const cfg = config.rappels;
+    if (!cfg.enabled) {
+      console.log("[rappels] scheduler désactivé (RAPPELS_ENABLED=false)");
+      return;
+    }
+    console.log(
+      `[rappels] scheduler actif: tick ${cfg.intervalMin} min, lead ${cfg.leadMin} min, fenêtre ${cfg.windowMin} min, dryRun=${cfg.dryRun}`,
+    );
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await runReminderTick({
+          now: new Date(),
+          leadMin: cfg.leadMin,
+          windowMin: cfg.windowMin,
+          dryRun: cfg.dryRun,
+          contact: config.matrix.contact,
+          send: (roomId, text) => this.sendRoomMessage(roomId, text),
+          notifyAdmin: (text) => this.notifyAdmin(text),
+        });
+        console.log(
+          `[rappels] tick: ${res.inscriptions} inscription(s), ${res.events} event(s), ${res.sent} envoyé(s), ${res.broken} cassé(s)`,
+        );
+      } catch (err) {
+        console.error("[rappels] tick error:", err);
+      }
+    };
+    // First tick after a short delay (let sync settle), then on the interval.
+    setTimeout(() => void tick(), 15_000);
+    this.reminderTimer = setInterval(() => void tick(), cfg.intervalMin * 60_000);
   }
 
   // Intercept verification to-device events before the Rust engine processes them

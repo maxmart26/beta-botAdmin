@@ -68,11 +68,24 @@ test("parseMultistatus: parses fields of a fully-specified event", () => {
   assert.equal(e.meetingUrl, "https://visio.numerique.gouv.fr/room-42");
 });
 
-test("parseMultistatus: parses a UTC DTSTART into the right instant", () => {
+test("parseMultistatus: converts a TZID=Europe/Paris DTSTART to real UTC", () => {
   const [e] = parseMultistatus(MULTISTATUS);
-  // TZID=Europe/Paris 15:00 in July (CEST, +2) → 13:00Z. POC treats floating
-  // times as UTC, so this documents current behaviour (see §8 timezones).
-  assert.equal(e.start?.toISOString(), "2026-07-15T15:00:00.000Z");
+  // TZID=Europe/Paris 15:00 in July (CEST, +2) → 13:00Z.
+  assert.equal(e.start?.toISOString(), "2026-07-15T13:00:00.000Z");
+});
+
+test("parseMultistatus: TZID conversion respects DST (winter = CET +1)", () => {
+  const ical = `<cal:calendar-data>BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:winter@example.org
+SUMMARY:Hiver
+DTSTART;TZID=Europe/Paris:20260115T090000
+END:VEVENT
+END:VCALENDAR
+</cal:calendar-data>`;
+  const [e] = parseMultistatus(ical);
+  // 09:00 Paris in January (CET, +1) → 08:00Z.
+  assert.equal(e.start?.toISOString(), "2026-01-15T08:00:00.000Z");
 });
 
 test("parseMultistatus: unescapes TEXT and pulls a URL from DESCRIPTION", () => {

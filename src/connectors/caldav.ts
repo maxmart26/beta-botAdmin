@@ -328,21 +328,68 @@ function unescapeText(s: string): string {
     .replace(/\\\\/g, "\\");
 }
 
+// Offset (ms) between the given IANA time zone and UTC at a given instant,
+// i.e. zoneLocalTime - utc. Computed via Intl so DST is handled. Returns 0 for
+// an unknown zone.
+function zoneOffsetMs(timeZone: string, at: Date): number {
+  try {
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const p: Record<string, number> = {};
+    for (const part of dtf.formatToParts(at)) {
+      if (part.type !== "literal") p[part.type] = Number(part.value);
+    }
+    const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    return asUtc - at.getTime();
+  } catch {
+    return 0;
+  }
+}
+
+// Convert a wall-clock time expressed in `timeZone` to the real UTC instant.
+// Near a DST transition the offset is momentarily ambiguous (±1h); we accept
+// that — reminder timing tolerates it.
+function wallClockToUtc(
+  y: number,
+  mo: number,
+  d: number,
+  h: number,
+  mi: number,
+  s: number,
+  timeZone: string,
+): Date {
+  const guess = Date.UTC(y, mo - 1, d, h, mi, s);
+  const offset = zoneOffsetMs(timeZone, new Date(guess));
+  return new Date(guess - offset);
+}
+
 // Parse an iCal date/date-time value. Handles:
-//   20260715T133000Z          (UTC)
-//   20260715T133000           (floating / local — treated as UTC for POC)
-//   VALUE=DATE 20260715       (all-day)
+//   20260715T133000Z                      (UTC — trailing Z)
+//   DTSTART;TZID=Europe/Paris:20260715…   (wall-clock in a named zone)
+//   20260715T133000                       (floating, no zone — treated as UTC)
+//   VALUE=DATE:20260715                    (all-day)
 function parseICalDate(rawName: string, value: string): Date | null {
   if (/VALUE=DATE(?![-])/i.test(rawName) || /^\d{8}$/.test(value)) {
     const m = value.match(/^(\d{4})(\d{2})(\d{2})$/);
     if (!m) return null;
     return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   }
-  const m = value.match(
-    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/,
-  );
+  const m = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
   if (!m) return null;
-  return new Date(
-    Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-  );
+  const [, y, mo, d, h, mi, s, z] = m;
+  // Trailing Z → already UTC.
+  if (z) return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
+  // TZID param → convert that zone's wall-clock to UTC.
+  const tzid = rawName.match(/TZID=([^;:]+)/i)?.[1];
+  if (tzid) return wallClockToUtc(+y, +mo, +d, +h, +mi, +s, tzid);
+  // Floating time, no zone info: fall back to UTC.
+  return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
 }
