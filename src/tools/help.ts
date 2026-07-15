@@ -62,9 +62,9 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 
 ## Comment me solliciter
 
-- **En MP** ou **en \`@mention\`** avec un texte normal → je renvoie un message générique (je ne réponds pas en langage naturel).
-- **Les commandes** se lancent dans ${cmdWhere}, en tapant une commande qui commence par \`/\`.
-- Sans \`@\` ni \`/\` dans un salon, je reste silencieux.
+Dans ${cmdWhere}, **mentionne-moi suivi d'une commande**, par exemple \`@betabot /help\`.
+
+> ⚠️ Je ne discute pas en langage naturel. Un texte normal (en MP ou en \`@mention\`, sans commande) ne renvoie qu'un message générique, et sans \`@\` ni \`/\` dans un salon je reste silencieux.
 
 ## Commandes slash
 
