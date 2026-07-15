@@ -5,7 +5,9 @@ data
 node_modules
 evals/results
 SECURITY-TESTS.MD
-docs/
+docs/*
+!docs/guides/
+!docs/guides/**
 client.nu
 env.example.nu
 *.csv

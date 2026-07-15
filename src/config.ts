@@ -129,11 +129,11 @@ export const config = {
     // (section 7.1 of docs/rappels-calendrier.md). Remove once inscription
     // stores per-user URLs.
     pocUrl: process.env["CALDAV_POC_URL"],
-    // Link shown to the user in the inscription DM, pointing to the La Suite
-    // page where they find their CalDAV URL.
+    // Link shown to the user in the inscription DM: the illustrated guide
+    // (share the calendar + find the CalDAV URL). Override via CALDAV_HELP_URL.
     helpUrl: optional(
       "CALDAV_HELP_URL",
-      "https://messagerie.numerique.gouv.fr/appsuite/",
+      "https://github.com/betagouv/beta-botAdmin/blob/main/docs/guides/rappels-calendrier.md",
     ),
   },
 } as const;
