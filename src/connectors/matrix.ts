@@ -9,12 +9,7 @@ import {
 import { marked } from "marked";
 import { config } from "../config.js";
 import { handleEmailsCommand } from "../commands/emails.js";
-import {
-  handleRoomsCommand,
-  handleSpacesCommand,
-  handleInviteCommand,
-} from "../commands/rooms.js";
-import { handleListeMembreCommand } from "../commands/membres.js";
+import { handleRoomsCommand, handleSpacesCommand } from "../commands/rooms.js";
 import { record, query, formatHistory } from "../commands/history.js";
 import { buildCommandOnlyNotice } from "../commands/notice.js";
 import {
@@ -31,6 +26,7 @@ import {
 import { testAccess } from "../connectors/caldav.js";
 import { upsertInscription, setStatut } from "../tools/rappels-store.js";
 import { runReminderTick } from "../tools/rappels-scheduler.js";
+import { forwardMembresCommand } from "../connectors/n8n.js";
 import { buildHelp, buildOpsHelp } from "../tools/help.js";
 
 // Publicly advertised commands (shown in /help, the generic notice and the
@@ -45,6 +41,10 @@ const KNOWN_COMMANDS = [
   "/liste-membre",
   "/invite",
 ] as const;
+
+// Commands handled by the n8n webhook (member lists): the bot only forwards
+// them and posts n8n's reply. Matched by exact verb or "<verb> …".
+const N8N_COMMANDS = ["/liste-membre", "/liste-membres", "/invite"] as const;
 
 function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
@@ -1118,32 +1118,25 @@ export class MatrixConnector {
         return;
       }
 
-      if (
-        text === "/liste-membre" ||
-        text === "/liste-membres" ||
-        text.startsWith("/liste-membre ") ||
-        text.startsWith("/liste-membres ")
-      ) {
-        const result = await handleListeMembreCommand(text);
-        await this.sendReaction(roomId, userEventId, result.reaction);
-        await this.sendMessage(roomId, result.message, userEventId, threadRoot);
-        const status: "ok" | "error" = result.reaction === "❌" ? "error" : "ok";
-        record({ user: sender, room: roomId, kind: "slash", text, status, detail: result.reaction });
-        return;
-      }
-
-      if (text === "/invite" || text.startsWith("/invite ")) {
-        const result = await handleInviteCommand(
-          this.client,
-          config.matrix.managedSpace,
-          this.ownUserId,
-          sender,
+      // Member-list commands are owned by n8n: forward the raw command and
+      // post whatever n8n returns (see connectors/n8n.ts).
+      const n8nVerb = text.split(/\s+/)[0] ?? "";
+      if ((N8N_COMMANDS as readonly string[]).includes(n8nVerb)) {
+        const reply = await forwardMembresCommand({
+          command: n8nVerb,
           text,
-        );
-        await this.sendReaction(roomId, userEventId, result.reaction);
-        await this.sendMessage(roomId, result.message, userEventId, threadRoot);
-        const status: "ok" | "error" = result.reaction === "❌" || result.reaction === "⛔" ? "error" : "ok";
-        record({ user: sender, room: roomId, kind: "slash", text, status, detail: result.reaction });
+          sender,
+          roomId,
+          isDM,
+          managedSpace: config.matrix.managedSpace,
+        });
+        await this.sendReaction(roomId, userEventId, reply.reaction);
+        await this.sendMessage(roomId, reply.message, userEventId, threadRoot);
+        const status: "ok" | "error" =
+          reply.reaction === "✅" || reply.reaction === "📋" || reply.reaction === "📭"
+            ? "ok"
+            : "error";
+        record({ user: sender, room: roomId, kind: "slash", text, status, detail: `n8n ${reply.reaction}` });
         return;
       }
 

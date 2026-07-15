@@ -105,11 +105,6 @@ export const config = {
       ["GRIST_OPS_TABLE_SENT", "GRIST_TABLE_SENT"],
       "RappelsEnvoyes",
     ),
-    // Member lists for /liste-membre, /invite and /salon --liste.
-    tableMembres: firstNonEmpty(
-      ["GRIST_OPS_TABLE_MEMBRES", "GRIST_TABLE_MEMBRES"],
-      "Membres",
-    ),
   },
   rappels: {
     // Master switch for the reminder scheduler (docs/rappels-calendrier.md §5.2).
@@ -140,6 +135,18 @@ export const config = {
       "CALDAV_HELP_URL",
       "https://messagerie.numerique.gouv.fr/appsuite/",
     ),
+  },
+  n8n: {
+    // Webhook that handles the member-list commands (/liste-membre, /invite).
+    // The bot forwards the parsed command to it; n8n reads Grist, performs the
+    // invitations, and returns the reply the bot posts. Empty → commands are
+    // reported as unavailable.
+    membresWebhookUrl: process.env["N8N_MEMBRES_WEBHOOK_URL"],
+    // Optional shared secret sent as `X-Betabot-Secret` so n8n can reject
+    // requests that don't come from the bot.
+    secret: process.env["N8N_WEBHOOK_SECRET"],
+    // Per-call timeout (ms) before the bot gives up on n8n.
+    timeoutMs: Number(optional("N8N_TIMEOUT_MS", "15000")),
   },
 } as const;
 
