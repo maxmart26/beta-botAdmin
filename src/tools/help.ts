@@ -66,9 +66,6 @@ function buildBotHelp(): string {
   const dimailDomain =
     config.dimail.domain || "(non configuré, DIMAIL_DOMAIN vide)";
 
-  const managedSpace =
-    config.matrix.managedSpace || "(désactivé — MATRIX_MANAGED_SPACE vide)";
-
   return `# Aide betabot
 
 Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne réagis qu'aux commandes ci-dessous.
@@ -109,7 +106,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 
 ### \`/salon\` — gestion des salons d'un espace
 - **Où** : ${cmdWhere}
-- **Espace géré** : ${managedSpace}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
@@ -123,7 +119,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 
 ### \`/espace\` — gestion des sous-espaces
 - **Où** : ${cmdWhere}
-- **Espace géré** : ${managedSpace}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
