@@ -99,11 +99,13 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 
 **Format \`<liste>\`** :
 - Nom simple (\`cartobio\`) → résolu en \`cartobio@<domaine par défaut>\`
-- Adresse complète (\`contact@covoiturage.beta.gouv.fr\`) → sous-domaine
+- Adresse complète (\`contact@beta.gouv.fr\`)
+
+> ℹ️ On ne gère que les adresses en \`beta.gouv.fr\`.
 
 **Exemples** :
 - \`/emails join cartobio jean.louis@beta.gouv.fr\`
-- \`/emails join contact@covoiturage.beta.gouv.fr jean.louis@beta.gouv.fr\`
+- \`/emails join contact@beta.gouv.fr jean.louis@beta.gouv.fr\`
 
 ### \`/salon\` — gestion des salons d'un espace
 - **Où** : ${cmdWhere}
