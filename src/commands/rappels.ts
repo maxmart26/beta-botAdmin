@@ -105,6 +105,49 @@ export function buildAccessErrorMessage(
   ].join("\n");
 }
 
+// Format an event start in Europe/Paris as HH:MM.
+function formatParisTime(d: Date): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  }).format(d);
+}
+
+// The reminder DM sent ~`leadMin` minutes before an event (docs §5.2.5). Shape:
+//   📅 Rappel : *Titre* dans ~15 min (10:30) avec organisateur.
+//   🔗 https://visio…
+export function buildReminderMessage(
+  event: {
+    summary: string;
+    start: Date | null;
+    organizer: string;
+    attendees: string[];
+    meetingUrl: string;
+  },
+  leadMin: number,
+): string {
+  const time = event.start ? ` (${formatParisTime(event.start)})` : "";
+  const withWho = event.organizer
+    ? ` avec ${event.organizer}`
+    : event.attendees.length
+      ? ` avec ${event.attendees.length} participant${event.attendees.length > 1 ? "s" : ""}`
+      : "";
+  const head = `📅 Rappel : **${event.summary}** dans ~${leadMin} min${time}${withWho}.`;
+  return event.meetingUrl ? `${head}\n🔗 ${event.meetingUrl}` : head;
+}
+
+// Sent once to a user when their calendar link stops working (docs §5.2.7).
+export function buildLinkBrokenMessage(contact?: string): string {
+  const who = contact ? contact : "Maxime ou Julien";
+  return [
+    "⚠️ Je n'arrive plus à lire ton agenda — ton lien ne fonctionne peut-être plus,",
+    `ou le partage avec le bot a été retiré. Tes rappels sont en pause.`,
+    "",
+    `Retape \`/rappels-calendrier\` pour te réinscrire, ou préviens ${who}.`,
+  ].join("\n");
+}
+
 export function buildStopMessage(): string {
   return "🔕 C'est noté, tu ne recevras plus de rappels. Retape `/rappels-calendrier` pour te réinscrire.";
 }

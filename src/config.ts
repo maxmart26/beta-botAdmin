@@ -106,6 +106,19 @@ export const config = {
       "RappelsEnvoyes",
     ),
   },
+  rappels: {
+    // Master switch for the reminder scheduler (docs/rappels-calendrier.md §5.2).
+    enabled: process.env["RAPPELS_ENABLED"] !== "false",
+    // Safety default: log instead of sending. Flip to "false" to actually DM.
+    dryRun: process.env["RAPPELS_DRY_RUN"] !== "false",
+    // Scheduler tick interval (minutes).
+    intervalMin: Number(optional("RAPPELS_INTERVAL_MIN", "5")),
+    // How long before an event to remind (minutes).
+    leadMin: Number(optional("RAPPELS_LEAD_MIN", "15")),
+    // Width of the detection window (minutes): events starting in
+    // [now + lead - window, now + lead] are reminded this tick.
+    windowMin: Number(optional("RAPPELS_WINDOW_MIN", "5")),
+  },
   caldav: {
     // Service account used to reach La Suite (Open-Xchange) CalDAV over Basic
     // auth. The per-user calendar URL is provided at inscription time; these
