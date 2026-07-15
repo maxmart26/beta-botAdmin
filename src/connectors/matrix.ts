@@ -1171,7 +1171,7 @@ export class MatrixConnector {
           await this.sendReaction(roomId, userEventId, "❌");
           await this.sendMessage(
             roomId,
-            "❌ Usage : `/invite <liste> --salon <nom>` ou `/invite <liste> --espace <nom>`",
+            "❌ Usage : `/invite --salon <nom> --liste <liste>` ou `/invite --espace <nom> --liste <liste>`",
             userEventId,
             threadRoot,
           );

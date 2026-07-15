@@ -145,8 +145,8 @@ Les listes sont gérées dans Grist (table \`Membres\`).
 
 | Sous-commande | Qui | Description |
 |---|---|---|
-| \`/invite <liste> --salon <nom>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
-| \`/invite <liste> --espace <nom>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
+| \`/invite --salon <nom> --liste <liste>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
+| \`/invite --espace <nom> --liste <liste>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
 
 ## Si quelque chose ne marche pas
 

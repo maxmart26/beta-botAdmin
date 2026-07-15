@@ -22,30 +22,38 @@ export function buildInviteHelp(): string {
     "",
     "| Commande | Effet |",
     "|---|---|",
-    "| `/invite <liste> --salon <nom>` | Invite la liste dans le **salon** <nom> |",
-    "| `/invite <liste> --espace <nom>` | Invite la liste dans l'**espace** <nom> |",
+    "| `/invite --salon <nom> --liste <liste>` | Invite la liste dans le **salon** <nom> |",
+    "| `/invite --espace <nom> --liste <liste>` | Invite la liste dans l'**espace** <nom> |",
     "| `/invite help` | Affiche cette aide |",
     "",
+    "- L'ordre des options n'importe pas.",
     "- Le salon/espace est cherché **sous l'espace géré** (par nom, ou ID `!…:serveur`).",
     "- Tu dois être **membre** du salon/espace ciblé.",
     "- Les listes se gèrent dans Grist ; vois les membres avec `/liste-membre <liste>`.",
-    "- Un nom avec des espaces : entre guillemets — `/invite \"Pole Tech\" --espace \"Fabrique\"`.",
+    "- Un nom avec des espaces : entre guillemets — `--espace \"Fabrique Numérique\"`.",
     "",
-    "**Exemple** : `/invite pole-tech --salon Coordination`",
+    "**Exemple** : `/invite --salon Coordination --liste pole-tech`",
   ].join("\n");
 }
 
-// Returns null when the syntax doesn't match. Values may be quoted.
+// Grab a `--flag value` where value is quoted or a single token. Returns the
+// unquoted value, or null.
+function grabFlag(raw: string, flag: string): string | null {
+  const m = raw.match(
+    new RegExp(`--${flag}\\s+("[^"]+"|'[^']+'|\\S+)`, "i"),
+  );
+  return m ? m[1]!.replace(/^["']|["']$/g, "") : null;
+}
+
+// Parse `/invite --salon <nom> --liste <liste>` (or `--espace`). Flags may be
+// in any order. Returns null when either the target or the list is missing.
 export function parseInviteArgs(text: string): InviteArgs | null {
-  const rawArg = text.replace(/^\/invite\s*/i, "").trim();
-  const flag = rawArg.match(/\s--(salon|espace)\s+(.+)$/i);
-  if (!flag) return null;
-  const liste = rawArg
-    .slice(0, flag.index)
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  const kind = flag[1]!.toLowerCase() as "salon" | "espace";
-  const target = flag[2]!.trim().replace(/^["']|["']$/g, "");
-  if (!liste || !target) return null;
-  return { liste, kind, target };
+  const raw = text.replace(/^\/invite\s*/i, "").trim();
+  const liste = grabFlag(raw, "liste");
+  const salon = grabFlag(raw, "salon");
+  const espace = grabFlag(raw, "espace");
+  if (!liste) return null;
+  if (salon) return { liste, kind: "salon", target: salon };
+  if (espace) return { liste, kind: "espace", target: espace };
+  return null;
 }
