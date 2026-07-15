@@ -34,14 +34,14 @@ import { buildHelp, buildOpsHelp } from "../tools/help.js";
 // Publicly advertised commands (shown in /help, the generic notice and the
 // "unknown command" hint). `/historique` is admin-only and intentionally left
 // out — it still works (handled explicitly below) but isn't advertised.
+// Publicly advertised commands. `/liste-membre` and `/invite` work but are
+// intentionally hidden for now (not shown in /help, the notice or the hint).
 const KNOWN_COMMANDS = [
   "/help",
   "/emails",
   "/salon",
   "/espace",
   "/rappels-calendrier",
-  "/liste-membre",
-  "/invite",
 ] as const;
 
 function levenshtein(a: string, b: string): number {

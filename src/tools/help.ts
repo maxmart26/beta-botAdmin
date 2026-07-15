@@ -114,21 +114,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 | \`@betabot /espace create <nom> <espace-parent>\` | membre de l'espace parent | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`@betabot /espace create <nom> "Pole Tech"\` |
 | \`@betabot /espace delete <nom>\` | utilisateur autorisé, en MP | Supprime un sous-espace **vide** (refusé s'il contient encore des salons ou sous-espaces) |
 
-### \`/liste-membre\` — listes de membres
-
-| Sous-commande | Description |
-|---|---|
-| \`@betabot /liste-membre <nom>\` | Affiche les **noms** des membres de la liste **<nom>** (les IDs Tchap restent masqués) |
-
-Les listes sont gérées dans Grist (table \`Membres\`).
-
-### \`/invite\` — inviter une liste dans un salon/espace
-
-| Sous-commande | Qui | Description |
-|---|---|---|
-| \`@betabot /invite --salon <nom> --liste <liste>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
-| \`@betabot /invite --espace <nom> --liste <liste>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
-
 ## Si quelque chose ne marche pas
 
 - Commande refusée dans un salon → utilise-la dans ${cmdWhere}
