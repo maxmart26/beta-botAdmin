@@ -2,6 +2,17 @@ function optional(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
+// First non-empty value among the given env vars, else the fallback. Unlike a
+// plain `??` chain, an env var set to "" (present in .env but blank) is skipped
+// rather than treated as a real value.
+function firstNonEmpty(names: string[], fallback: string): string {
+  for (const n of names) {
+    const v = process.env[n];
+    if (v && v.trim().length > 0) return v.trim();
+  }
+  return fallback;
+}
+
 function optionalList(name: string): string[] {
   const val = process.env[name];
   if (!val) return [];
@@ -67,6 +78,63 @@ export const config = {
     password: process.env["DIMAIL_PASSWORD"],
     token: process.env["DIMAIL_TOKEN"],
     domain: process.env["DIMAIL_DOMAIN"],
+  },
+  grist: {
+    // Host root, e.g. https://grist.numerique.gouv.fr. Accepts a value that
+    // already includes a trailing "/api" (GRIST_API_URL) — the connector adds
+    // "/api" itself, so we strip it here to avoid a doubled path.
+    url: firstNonEmpty(
+      ["GRIST_API_URL", "GRIST_URL"],
+      "https://grist.numerique.gouv.fr",
+    )
+      .replace(/\/+$/, "")
+      .replace(/\/api$/, ""),
+    apiKey: process.env["GRIST_API_KEY"],
+    // Document holding the reminder tables (Settings → API → ID du Document).
+    docId: firstNonEmpty(["GRIST_OPS_DOC_ID", "GRIST_DOC_ID"], "") || undefined,
+    // Table IDs (overridable if they differ from the doc §4 names).
+    tableInscriptions: firstNonEmpty(
+      [
+        "GRIST_OPS_TABLE_INSCRIPTIONS",
+        "GRIST_OPS_TABLE_ID",
+        "GRIST_TABLE_INSCRIPTIONS",
+      ],
+      "RappelsCalendrier",
+    ),
+    tableSent: firstNonEmpty(
+      ["GRIST_OPS_TABLE_SENT", "GRIST_TABLE_SENT"],
+      "RappelsEnvoyes",
+    ),
+  },
+  rappels: {
+    // Master switch for the reminder scheduler (docs/rappels-calendrier.md §5.2).
+    enabled: process.env["RAPPELS_ENABLED"] !== "false",
+    // Safety default: log instead of sending. Flip to "false" to actually DM.
+    dryRun: process.env["RAPPELS_DRY_RUN"] !== "false",
+    // Scheduler tick interval (minutes).
+    intervalMin: Number(optional("RAPPELS_INTERVAL_MIN", "5")),
+    // How long before an event to remind (minutes).
+    leadMin: Number(optional("RAPPELS_LEAD_MIN", "15")),
+    // Width of the detection window (minutes): events starting in
+    // [now + lead - window, now + lead] are reminded this tick.
+    windowMin: Number(optional("RAPPELS_WINDOW_MIN", "5")),
+  },
+  caldav: {
+    // Service account used to reach La Suite (Open-Xchange) CalDAV over Basic
+    // auth. The per-user calendar URL is provided at inscription time; these
+    // credentials authenticate the request.
+    user: process.env["CALDAV_USER"],
+    password: process.env["CALDAV_PASSWORD"],
+    // POC only: a single hardcoded calendar URL to validate the read flow
+    // (section 7.1 of docs/rappels-calendrier.md). Remove once inscription
+    // stores per-user URLs.
+    pocUrl: process.env["CALDAV_POC_URL"],
+    // Link shown to the user in the inscription DM, pointing to the La Suite
+    // page where they find their CalDAV URL.
+    helpUrl: optional(
+      "CALDAV_HELP_URL",
+      "https://messagerie.numerique.gouv.fr/appsuite/",
+    ),
   },
 } as const;
 

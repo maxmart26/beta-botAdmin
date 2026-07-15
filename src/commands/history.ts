@@ -6,7 +6,7 @@ export interface HistoryEntry {
   ts: number;
   user: string;
   room: string;
-  kind: "slash" | "mention";
+  kind: "slash" | "mention" | "dm";
   text: string;
   status: "ok" | "refused" | "unknown" | "error";
   detail?: string;
