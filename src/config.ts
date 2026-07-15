@@ -68,6 +68,17 @@ export const config = {
     token: process.env["DIMAIL_TOKEN"],
     domain: process.env["DIMAIL_DOMAIN"],
   },
+  caldav: {
+    // Service account used to reach La Suite (Open-Xchange) CalDAV over Basic
+    // auth. The per-user calendar URL is provided at inscription time; these
+    // credentials authenticate the request.
+    user: process.env["CALDAV_USER"],
+    password: process.env["CALDAV_PASSWORD"],
+    // POC only: a single hardcoded calendar URL to validate the read flow
+    // (section 7.1 of docs/rappels-calendrier.md). Remove once inscription
+    // stores per-user URLs.
+    pocUrl: process.env["CALDAV_POC_URL"],
+  },
 } as const;
 
 export function validateMatrixConfig(): void {
