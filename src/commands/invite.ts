@@ -22,9 +22,9 @@ export function buildInviteHelp(): string {
     "",
     "| Commande | Effet |",
     "|---|---|",
-    "| `/invite --salon <nom> --liste <liste>` | Invite la liste dans le **salon** <nom> |",
-    "| `/invite --espace <nom> --liste <liste>` | Invite la liste dans l'**espace** <nom> |",
-    "| `/invite help` | Affiche cette aide |",
+    "| `@betabot /invite --salon <nom> --liste <liste>` | Invite la liste dans le **salon** <nom> |",
+    "| `@betabot /invite --espace <nom> --liste <liste>` | Invite la liste dans l'**espace** <nom> |",
+    "| `@betabot /invite help` | Affiche cette aide |",
     "",
     "- L'ordre des options n'importe pas.",
     "- Le salon/espace est cherché **sous l'espace géré** (par nom, ou ID `!…:serveur`).",
@@ -32,7 +32,7 @@ export function buildInviteHelp(): string {
     "- Les listes se gèrent dans Grist ; vois les membres avec `/liste-membre <liste>`.",
     "- Un nom avec des espaces : entre guillemets — `--espace \"Fabrique Numérique\"`.",
     "",
-    "**Exemple** : `/invite --salon Coordination --liste pole-tech`",
+    "**Exemple** : `@betabot /invite --salon Coordination --liste pole-tech`",
   ].join("\n");
 }
 

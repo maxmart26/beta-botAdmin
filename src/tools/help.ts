@@ -88,11 +88,11 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 
 | Sous-commande | Description |
 |---|---|
-| \`/emails\` ou \`/emails help\` | Affiche cette aide /emails |
-| \`/emails create <liste> <email>\` | Crée une nouvelle liste avec un propriétaire |
-| \`/emails list <liste>\` | Affiche les membres d'une liste |
-| \`/emails join <liste> <email>\` | Ajoute un membre à une liste |
-| \`/emails leave <liste> <email>\` | Retire un membre d'une liste |
+| \`@betabot /emails\` ou \`@betabot /emails help\` | Affiche cette aide /emails |
+| \`@betabot /emails create <liste> <email>\` | Crée une nouvelle liste avec un propriétaire |
+| \`@betabot /emails list <liste>\` | Affiche les membres d'une liste |
+| \`@betabot /emails join <liste> <email>\` | Ajoute un membre à une liste |
+| \`@betabot /emails leave <liste> <email>\` | Retire un membre d'une liste |
 
 **Format \`<liste>\`** :
 - Nom simple (\`cartobio\`) → résolu en \`cartobio@<domaine par défaut>\`
@@ -101,39 +101,39 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 > ℹ️ On ne gère que les adresses en \`beta.gouv.fr\`.
 
 **Exemples** :
-- \`/emails join cartobio jean.louis@beta.gouv.fr\`
-- \`/emails join contact@beta.gouv.fr jean.louis@beta.gouv.fr\`
+- \`@betabot /emails join cartobio jean.louis@beta.gouv.fr\`
+- \`@betabot /emails join contact@beta.gouv.fr jean.louis@beta.gouv.fr\`
 
 ### \`/salon\` — gestion des salons d'un espace
 - **Où** : ${cmdWhere}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
-| \`/salon list\` | tout le monde | Liste les salons, groupés par espace |
-| \`/salon create <nom>\` | tout le monde | Crée un salon chiffré, t'y invite, et le rattache à l'espace géré |
-| \`/salon create <nom> --clair\` | tout le monde | Idem mais salon **non chiffré** (le chiffrement ne peut pas être retiré ensuite) |
-| \`/salon create <nom> <espace>\` | tout le monde | Idem, mais rattache le salon au sous-espace **<espace>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`/salon create <nom> "Pole Tech"\` |
-| \`/salon create <nom> --liste <liste>\` | tout le monde | Idem, et **invite** tous les membres de la liste **<liste>** dans le salon créé (voir \`/liste-membre\`) |
-| \`/salon delete <nom>\` | modérateur+ du salon ciblé | Ferme le salon de l'espace géré : détache + expulse les membres + le bot quitte |
-| \`/salon delete <nom> <espace>\` | modérateur+ du salon ciblé | Idem mais cible le salon dans le sous-espace **<espace>** (lève l'ambiguïté ; espace avec espaces = entre guillemets) |
+| \`@betabot /salon list\` | tout le monde | Liste les salons, groupés par espace |
+| \`@betabot /salon create <nom>\` | tout le monde | Crée un salon chiffré, t'y invite, et le rattache à l'espace géré |
+| \`@betabot /salon create <nom> --clair\` | tout le monde | Idem mais salon **non chiffré** (le chiffrement ne peut pas être retiré ensuite) |
+| \`@betabot /salon create <nom> <espace>\` | tout le monde | Idem, mais rattache le salon au sous-espace **<espace>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`@betabot /salon create <nom> "Pole Tech"\` |
+| \`@betabot /salon create <nom> --liste <liste>\` | tout le monde | Idem, et **invite** tous les membres de la liste **<liste>** dans le salon créé (voir \`@betabot /liste-membre\`) |
+| \`@betabot /salon delete <nom>\` | modérateur+ du salon ciblé | Ferme le salon de l'espace géré : détache + expulse les membres + le bot quitte |
+| \`@betabot /salon delete <nom> <espace>\` | modérateur+ du salon ciblé | Idem mais cible le salon dans le sous-espace **<espace>** (lève l'ambiguïté ; espace avec espaces = entre guillemets) |
 
 ### \`/espace\` — gestion des sous-espaces
 - **Où** : ${cmdWhere}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
-| \`/espace list\` | tout le monde | Liste les sous-espaces de l'espace géré |
-| \`/espace list <espace>\` | tout le monde | Liste les sous-espaces d'un sous-espace (nom **ou** ID, à n'importe quelle profondeur) |
-| \`/espace create <nom>\` | tout le monde | Crée un sous-espace et le rattache à l'espace géré |
-| \`/espace create <nom> <espace-parent>\` | membre de l'espace parent | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`/espace create <nom> "Pole Tech"\` |
-| \`/espace delete <nom>\` | utilisateur autorisé, en MP | Supprime un sous-espace **vide** (refusé s'il contient encore des salons ou sous-espaces) |
+| \`@betabot /espace list\` | tout le monde | Liste les sous-espaces de l'espace géré |
+| \`@betabot /espace list <espace>\` | tout le monde | Liste les sous-espaces d'un sous-espace (nom **ou** ID, à n'importe quelle profondeur) |
+| \`@betabot /espace create <nom>\` | tout le monde | Crée un sous-espace et le rattache à l'espace géré |
+| \`@betabot /espace create <nom> <espace-parent>\` | membre de l'espace parent | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`@betabot /espace create <nom> "Pole Tech"\` |
+| \`@betabot /espace delete <nom>\` | utilisateur autorisé, en MP | Supprime un sous-espace **vide** (refusé s'il contient encore des salons ou sous-espaces) |
 
 ### \`/liste-membre\` — listes de membres
 - **Où** : ${cmdWhere}
 
 | Sous-commande | Description |
 |---|---|
-| \`/liste-membre <nom>\` | Affiche les **noms** des membres de la liste **<nom>** (les IDs Tchap restent masqués) |
+| \`@betabot /liste-membre <nom>\` | Affiche les **noms** des membres de la liste **<nom>** (les IDs Tchap restent masqués) |
 
 Les listes sont gérées dans Grist (table \`Membres\`).
 
@@ -142,8 +142,8 @@ Les listes sont gérées dans Grist (table \`Membres\`).
 
 | Sous-commande | Qui | Description |
 |---|---|---|
-| \`/invite --salon <nom> --liste <liste>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
-| \`/invite --espace <nom> --liste <liste>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
+| \`@betabot /invite --salon <nom> --liste <liste>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
+| \`@betabot /invite --espace <nom> --liste <liste>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
 
 ## Si quelque chose ne marche pas
 
