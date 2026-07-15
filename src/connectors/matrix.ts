@@ -9,7 +9,12 @@ import {
 import { marked } from "marked";
 import { config } from "../config.js";
 import { handleEmailsCommand } from "../commands/emails.js";
-import { handleRoomsCommand, handleSpacesCommand } from "../commands/rooms.js";
+import {
+  handleRoomsCommand,
+  handleSpacesCommand,
+  handleInviteCommand,
+} from "../commands/rooms.js";
+import { handleListeMembreCommand } from "../commands/membres.js";
 import { record, query, formatHistory } from "../commands/history.js";
 import { buildCommandOnlyNotice } from "../commands/notice.js";
 import {
@@ -37,6 +42,8 @@ const KNOWN_COMMANDS = [
   "/salon",
   "/espace",
   "/rappels-calendrier",
+  "/liste-membre",
+  "/invite",
 ] as const;
 
 function levenshtein(a: string, b: string): number {
@@ -1103,6 +1110,35 @@ export class MatrixConnector {
           sender,
           text,
           allowDelete,
+        );
+        await this.sendReaction(roomId, userEventId, result.reaction);
+        await this.sendMessage(roomId, result.message, userEventId, threadRoot);
+        const status: "ok" | "error" = result.reaction === "❌" || result.reaction === "⛔" ? "error" : "ok";
+        record({ user: sender, room: roomId, kind: "slash", text, status, detail: result.reaction });
+        return;
+      }
+
+      if (
+        text === "/liste-membre" ||
+        text === "/liste-membres" ||
+        text.startsWith("/liste-membre ") ||
+        text.startsWith("/liste-membres ")
+      ) {
+        const result = await handleListeMembreCommand(text);
+        await this.sendReaction(roomId, userEventId, result.reaction);
+        await this.sendMessage(roomId, result.message, userEventId, threadRoot);
+        const status: "ok" | "error" = result.reaction === "❌" ? "error" : "ok";
+        record({ user: sender, room: roomId, kind: "slash", text, status, detail: result.reaction });
+        return;
+      }
+
+      if (text === "/invite" || text.startsWith("/invite ")) {
+        const result = await handleInviteCommand(
+          this.client,
+          config.matrix.managedSpace,
+          this.ownUserId,
+          sender,
+          text,
         );
         await this.sendReaction(roomId, userEventId, result.reaction);
         await this.sendMessage(roomId, result.message, userEventId, threadRoot);

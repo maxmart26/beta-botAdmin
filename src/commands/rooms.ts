@@ -1,6 +1,8 @@
 import type { MatrixClient } from "matrix-bot-sdk";
 import { config } from "../config.js";
 import { addCreatedRoom, removeCreatedRoom } from "./created-rooms.js";
+import { listMembers, listNames, type Membre } from "../tools/membres-store.js";
+import { parseInviteArgs } from "./membres.js";
 
 // Manage rooms inside a single configured Space (MATRIX_MANAGED_SPACE):
 // create a room attached to the space, or "close" one (detach + kick + leave).
@@ -176,6 +178,165 @@ async function resolveSubSpace(
   return null;
 }
 
+// Find a room (non-space child) anywhere under the managed space by ID
+// (`!id:server`) or name (case-insensitive). BFS the whole space tree so a room
+// nested in a sub-espace resolves too. Returns { room, ambiguous }: ambiguous is
+// true when several rooms share the name (caller should ask to disambiguate).
+async function resolveRoom(
+  client: MatrixClient,
+  managedSpaceId: string,
+  idOrName: string,
+): Promise<{ room: SpaceChild | null; ambiguous: boolean }> {
+  const needle = idOrName.toLowerCase();
+  const byId = idOrName.startsWith("!");
+  const matches: SpaceChild[] = [];
+  const visited = new Set<string>([managedSpaceId]);
+  let frontier = await listChildren(client, managedSpaceId);
+  while (frontier.length) {
+    const next: SpaceChild[] = [];
+    for (const c of frontier) {
+      if (visited.has(c.roomId)) continue;
+      visited.add(c.roomId);
+      if (c.isSpace) {
+        next.push(...(await listChildren(client, c.roomId)));
+        continue;
+      }
+      if (byId ? c.roomId.toLowerCase() === needle : c.name.toLowerCase() === needle) {
+        matches.push(c);
+      }
+    }
+    frontier = next;
+  }
+  if (matches.length === 0) return { room: null, ambiguous: false };
+  if (matches.length > 1) return { room: null, ambiguous: true };
+  return { room: matches[0]!, ambiguous: false };
+}
+
+// Invite a list of members into a room/space. Skips the bot and anyone already
+// joined/invited (M_FORBIDDEN "already in the room"). Returns a summary.
+async function inviteMembers(
+  client: MatrixClient,
+  roomId: string,
+  botUserId: string,
+  members: Membre[],
+): Promise<{ invited: number; already: number; failed: string[] }> {
+  let invited = 0;
+  let already = 0;
+  const failed: string[] = [];
+  for (const m of members) {
+    if (m.mxid === botUserId) continue;
+    try {
+      await client.inviteUser(m.mxid, roomId);
+      invited++;
+    } catch (err) {
+      const msg = String(
+        (err as { body?: { error?: string }; message?: string })?.body?.error ??
+          (err as Error)?.message ??
+          err,
+      );
+      // Already joined or already invited → count as "already", not a failure.
+      if (/already|forbidden|M_FORBIDDEN/i.test(msg)) already++;
+      else failed.push(m.nom);
+    }
+  }
+  return { invited, already, failed };
+}
+
+// /invite <liste> --salon <nom> | --espace <nom>
+// Invite every member of a Grist list into a room or a space (resolved under
+// the managed space). Gated to command rooms by the caller.
+export async function handleInviteCommand(
+  client: MatrixClient,
+  managedSpaceId: string | undefined,
+  botUserId: string,
+  senderUserId: string,
+  text: string,
+): Promise<RoomCmdResult> {
+  if (!managedSpaceId) {
+    return {
+      reaction: "⛔",
+      message:
+        "⛔ `/invite` désactivé : `MATRIX_MANAGED_SPACE` n'est pas configuré.",
+    };
+  }
+
+  const usage =
+    "❌ Usage : `/invite <liste> --salon <nom>` ou `/invite <liste> --espace <nom>`";
+  const parsed = parseInviteArgs(text);
+  if (!parsed) return { reaction: "❌", message: usage };
+  const { liste, kind: targetKind, target: targetName } = parsed;
+
+  // Resolve the target room/space.
+  let targetId: string;
+  let targetLabel: string;
+  if (targetKind === "espace") {
+    const sp = await resolveSubSpace(client, managedSpaceId, targetName);
+    if (!sp)
+      return {
+        reaction: "❌",
+        message: `❌ Aucun espace **${targetName}**. Tape \`/espace list\`.`,
+      };
+    targetId = sp.roomId;
+    targetLabel = `l'espace **${sp.name}**`;
+  } else {
+    const { room, ambiguous } = await resolveRoom(client, managedSpaceId, targetName);
+    if (ambiguous)
+      return {
+        reaction: "⚠️",
+        message: `⚠️ Plusieurs salons s'appellent **${targetName}**. Précise avec l'ID : \`/invite ${liste} --salon !id:serveur\`.`,
+      };
+    if (!room)
+      return {
+        reaction: "❌",
+        message: `❌ Aucun salon **${targetName}**. Tape \`/salon list\`.`,
+      };
+    targetId = room.roomId;
+    targetLabel = `le salon **${room.name}**`;
+  }
+
+  // Only members of the target may bulk-invite into it (the bot is exempt).
+  if (
+    senderUserId !== botUserId &&
+    !(await isRoomMember(client, targetId, senderUserId))
+  ) {
+    return {
+      reaction: "⛔",
+      message: `⛔ Tu n'es pas membre de ${targetLabel}, tu ne peux pas y inviter.`,
+    };
+  }
+
+  let members: Membre[];
+  try {
+    members = await listMembers(liste);
+  } catch (err) {
+    return {
+      reaction: "❌",
+      message: `❌ Erreur d'accès à la liste : ${String(err instanceof Error ? err.message : err).slice(0, 200)}`,
+    };
+  }
+  if (members.length === 0) {
+    const names = await listNames().catch(() => []);
+    const hint = names.length
+      ? ` Listes : ${names.map((n) => `\`${n}\``).join(", ")}.`
+      : "";
+    return {
+      reaction: "📭",
+      message: `📭 Liste **${liste}** vide ou inexistante.${hint}`,
+    };
+  }
+
+  const { invited, already, failed } = await inviteMembers(
+    client,
+    targetId,
+    botUserId,
+    members,
+  );
+  const parts = [`✅ ${invited} invité(s) dans ${targetLabel}`];
+  if (already) parts.push(`${already} déjà présent(s)`);
+  if (failed.length) parts.push(`❌ ${failed.length} échec(s) : ${failed.join(", ")}`);
+  return { reaction: invited > 0 ? "✅" : "⚠️", message: parts.join(" · ") };
+}
+
 // Parse a `<nom> [espace]` argument into a room name and an optional target
 // espace. A **quoted** trailing segment is always the espace, so names that
 // contain spaces work (e.g. `Mon Salon "Pole Tech"`). A single quoted value
@@ -223,6 +384,9 @@ async function createRoom(
   botUserId: string,
   spaceLabel?: string | null,
   encrypted = true,
+  // Extra people to invite as regular members (e.g. a member list via
+  // `--liste`). Unlike `inviteUserId`, they do NOT get moderator power.
+  extraInvitees: string[] = [],
 ): Promise<RoomCmdResult> {
   const where = spaceLabel ? `l'espace **${spaceLabel}**` : "l'espace géré";
   const existing = await listChildren(client, spaceId);
@@ -237,21 +401,26 @@ async function createRoom(
     };
   }
 
-  // Who gets invited: the requester, or — when the bot created the room for
-  // itself (self command, e.g. via n8n) — the configured default invitees.
-  // The bot's own account must never be in the list: inviting yourself (or a
-  // user already in the room) is rejected by the server with M_FORBIDDEN.
-  const invitees = (
+  // Who gets invited as MODERATOR: the requester, or — when the bot created the
+  // room for itself (self command, e.g. via n8n) — the configured default
+  // invitees. The bot's own account must never be in the list: inviting
+  // yourself (or a user already in the room) is rejected with M_FORBIDDEN.
+  const moderators = (
     inviteUserId && inviteUserId !== botUserId
       ? [inviteUserId]
       : config.matrix.defaultInvites
   ).filter((u) => u !== botUserId);
 
-  // Keep the bot as admin (100) and make every invitee a moderator (50) so
-  // they can manage/close the room. `users` is replaced wholesale by the
-  // override, so the bot must be listed explicitly or it loses its power.
+  // Keep the bot as admin (100) and make every moderator (50) so they can
+  // manage/close the room. `users` is replaced wholesale by the override, so
+  // the bot must be listed explicitly or it loses its power.
   const users: Record<string, number> = { [botUserId]: 100 };
-  for (const u of invitees) users[u] = MODERATOR_POWER_LEVEL;
+  for (const u of moderators) users[u] = MODERATOR_POWER_LEVEL;
+
+  // Full invite list = moderators + extra members, deduped, minus the bot.
+  const invitees = [...new Set([...moderators, ...extraInvitees])].filter(
+    (u) => u !== botUserId,
+  );
 
   const spaceVia = serverName(spaceId);
   // Synapse force le chiffrement sur les salons privés (config serveur
@@ -330,9 +499,13 @@ async function createRoom(
   // Track it so `/salon` commands can manage it later.
   addCreatedRoom(roomId, name);
 
+  const membresNote =
+    extraInvitees.length > 0
+      ? `\n👥 ${extraInvitees.length} membre(s) de liste invité(s).`
+      : "";
   return {
     reaction: "✅",
-    message: `🏠 Salon **${name}** créé (${encrypted ? "privé, chiffré" : "public, non chiffré"}) et rattaché à ${where}.\nID : \`${roomId}\``,
+    message: `🏠 Salon **${name}** créé (${encrypted ? "privé, chiffré" : "public, non chiffré"}) et rattaché à ${where}.${membresNote}\nID : \`${roomId}\``,
   };
 }
 
@@ -599,6 +772,7 @@ function helpMessage(): RoomCmdResult {
 | \`/salon create <nom>\` | Crée un salon (chiffré), t'y invite, et le rattache à l'espace géré |
 | \`/salon create <nom> --clair\` | Idem mais salon **non chiffré** (le chiffrement ne peut pas être retiré ensuite) |
 | \`/salon create <nom> <espace>\` | Idem, mais rattache le salon au sous-espace **<espace>** (nom ou ID). Si le nom de l'espace contient des espaces, mets-le entre guillemets : \`/salon create <nom> "Pole Tech"\` |
+| \`/salon create <nom> --liste <liste>\` | Idem, et **invite** tous les membres de la liste **<liste>** (voir \`/liste-membre\`) en plus du créateur |
 | \`/salon delete <nom>\` | Ferme le salon de l'espace géré : détache + expulse les membres + le bot quitte |
 | \`/salon delete <nom> <espace>\` | Idem, mais cible le salon situé dans le sous-espace **<espace>** (pour lever l'ambiguïté si le même nom existe ailleurs). Espace avec des espaces : entre guillemets |
 
@@ -799,11 +973,27 @@ export async function handleRoomsCommand(
         if (!rawArg)
           return {
             reaction: "❌",
-            message: "❌ Usage : `/salon create <nom> [\"espace\"] [--clair]`",
+            message:
+              "❌ Usage : `/salon create <nom> [\"espace\"] [--clair] [--liste <nom>]`",
           };
+        // Extract `--liste <nom>` (optional): also invite that member list.
+        // Pulled out first so its value never lands in the room/espace name.
+        let listeName: string | null = null;
+        let argForParse = rawArg;
+        const listeMatch = rawArg.match(
+          /(?:^|\s)--liste\s+("[^"]+"|'[^']+'|\S+)/i,
+        );
+        if (listeMatch) {
+          listeName = listeMatch[1]!.replace(/^["']|["']$/g, "");
+          argForParse = (
+            rawArg.slice(0, listeMatch.index) +
+            " " +
+            rawArg.slice(listeMatch.index! + listeMatch[0].length)
+          ).trim();
+        }
         // `--clair` (anywhere in the args) creates an unencrypted room. Strip
         // the flag out before parsing name/espace so it never lands in either.
-        const tokensRaw = rawArg.split(/\s+/);
+        const tokensRaw = argForParse.split(/\s+/).filter(Boolean);
         const encrypted = !tokensRaw.some(
           (t) => t.toLowerCase() === "--clair",
         );
@@ -852,8 +1042,25 @@ export async function handleRoomsCommand(
         if (!roomName)
           return {
             reaction: "❌",
-            message: "❌ Usage : `/salon create <nom> [\"espace\"] [--clair]`",
+            message:
+              "❌ Usage : `/salon create <nom> [\"espace\"] [--clair] [--liste <nom>]`",
           };
+        // Resolve the member list (if --liste was given) into extra invitees.
+        let extraInvitees: string[] = [];
+        if (listeName) {
+          const members = await listMembers(listeName);
+          if (members.length === 0) {
+            const names = await listNames().catch(() => []);
+            const hint = names.length
+              ? ` Listes : ${names.map((n) => `\`${n}\``).join(", ")}.`
+              : "";
+            return {
+              reaction: "📭",
+              message: `📭 Liste **${listeName}** vide ou inexistante — salon non créé.${hint}`,
+            };
+          }
+          extraInvitees = members.map((mm) => mm.mxid);
+        }
         return await createRoom(
           client,
           targetSpaceId,
@@ -862,6 +1069,7 @@ export async function handleRoomsCommand(
           botUserId,
           targetSpaceName,
           encrypted,
+          extraInvitees,
         );
       }
       case "delete":

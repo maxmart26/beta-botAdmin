@@ -130,6 +130,25 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 | \`/espace create <nom> <espace-parent>\` | membre de l'espace parent | Crée un sous-espace **imbriqué** dans **<espace-parent>** (nom **ou** ID). Nom avec espaces : entre guillemets, ex. \`/espace create <nom> "Pole Tech"\` |
 | \`/espace delete <nom>\` | utilisateur autorisé, en MP | Supprime un sous-espace **vide** (refusé s'il contient encore des salons ou sous-espaces) |
 
+### \`/liste-membre\` — listes de membres
+- **Où** : ${cmdWhere}
+
+| Sous-commande | Description |
+|---|---|
+| \`/liste-membre <nom>\` | Affiche les **noms** des membres de la liste **<nom>** (les IDs Tchap restent masqués) |
+
+Les listes sont gérées dans Grist (table \`Membres\`).
+
+### \`/invite\` — inviter une liste dans un salon/espace
+- **Où** : ${cmdWhere}
+
+| Sous-commande | Qui | Description |
+|---|---|---|
+| \`/invite <liste> --salon <nom>\` | membre du salon ciblé | Invite tous les membres de **<liste>** dans le salon **<nom>** |
+| \`/invite <liste> --espace <nom>\` | membre de l'espace ciblé | Invite tous les membres de **<liste>** dans l'espace **<nom>** |
+
+Tu peux aussi inviter une liste à la création : \`/salon create <nom> --liste <liste>\`.
+
 ## Si quelque chose ne marche pas
 
 - Commande refusée dans un salon → utilise-la dans ${cmdWhere}

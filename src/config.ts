@@ -105,6 +105,11 @@ export const config = {
       ["GRIST_OPS_TABLE_SENT", "GRIST_TABLE_SENT"],
       "RappelsEnvoyes",
     ),
+    // Member lists for /liste-membre, /invite and /salon --liste.
+    tableMembres: firstNonEmpty(
+      ["GRIST_OPS_TABLE_MEMBRES", "GRIST_TABLE_MEMBRES"],
+      "Membres",
+    ),
   },
   rappels: {
     // Master switch for the reminder scheduler (docs/rappels-calendrier.md §5.2).
