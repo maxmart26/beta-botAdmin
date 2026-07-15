@@ -2,6 +2,17 @@ function optional(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
+// First non-empty value among the given env vars, else the fallback. Unlike a
+// plain `??` chain, an env var set to "" (present in .env but blank) is skipped
+// rather than treated as a real value.
+function firstNonEmpty(names: string[], fallback: string): string {
+  for (const n of names) {
+    const v = process.env[n];
+    if (v && v.trim().length > 0) return v.trim();
+  }
+  return fallback;
+}
+
 function optionalList(name: string): string[] {
   const val = process.env[name];
   if (!val) return [];
@@ -67,6 +78,33 @@ export const config = {
     password: process.env["DIMAIL_PASSWORD"],
     token: process.env["DIMAIL_TOKEN"],
     domain: process.env["DIMAIL_DOMAIN"],
+  },
+  grist: {
+    // Host root, e.g. https://grist.numerique.gouv.fr. Accepts a value that
+    // already includes a trailing "/api" (GRIST_API_URL) — the connector adds
+    // "/api" itself, so we strip it here to avoid a doubled path.
+    url: firstNonEmpty(
+      ["GRIST_API_URL", "GRIST_URL"],
+      "https://grist.numerique.gouv.fr",
+    )
+      .replace(/\/+$/, "")
+      .replace(/\/api$/, ""),
+    apiKey: process.env["GRIST_API_KEY"],
+    // Document holding the reminder tables (Settings → API → ID du Document).
+    docId: firstNonEmpty(["GRIST_OPS_DOC_ID", "GRIST_DOC_ID"], "") || undefined,
+    // Table IDs (overridable if they differ from the doc §4 names).
+    tableInscriptions: firstNonEmpty(
+      [
+        "GRIST_OPS_TABLE_INSCRIPTIONS",
+        "GRIST_OPS_TABLE_ID",
+        "GRIST_TABLE_INSCRIPTIONS",
+      ],
+      "RappelsCalendrier",
+    ),
+    tableSent: firstNonEmpty(
+      ["GRIST_OPS_TABLE_SENT", "GRIST_TABLE_SENT"],
+      "RappelsEnvoyes",
+    ),
   },
   caldav: {
     // Service account used to reach La Suite (Open-Xchange) CalDAV over Basic
