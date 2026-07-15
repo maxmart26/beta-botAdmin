@@ -44,35 +44,134 @@ function toICalUtc(d: Date): string {
 // Build the calendar-query REPORT body restricting to VEVENTs whose time
 // overlaps [start, end].
 function calendarQueryBody(start: Date, end: Date): string {
+  const s = toICalUtc(start);
+  const e = toICalUtc(end);
+  // `<c:expand>` makes the server return concrete OCCURRENCES of recurring
+  // events within [start, end], each with its real DTSTART — instead of the
+  // recurrence master with its original (possibly long-past) DTSTART. Without
+  // it, OX returns the May master for a weekly meeting and the reminder logic
+  // never sees the occurrence starting in 15 min.
   return `<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>
     <d:getetag />
-    <c:calendar-data />
+    <c:calendar-data>
+      <c:expand start="${s}" end="${e}" />
+    </c:calendar-data>
   </d:prop>
   <c:filter>
     <c:comp-filter name="VCALENDAR">
       <c:comp-filter name="VEVENT">
-        <c:time-range start="${toICalUtc(start)}" end="${toICalUtc(end)}" />
+        <c:time-range start="${s}" end="${e}" />
       </c:comp-filter>
     </c:comp-filter>
   </c:filter>
 </c:calendar-query>`;
 }
 
-// Query a calendar for events overlapping [start, end].
+// Test that a calendar URL is reachable with the service credentials, without
+// pulling events. A lightweight PROPFIND Depth 0. Any 2xx (200/207, and 201 —
+// the doc flagged 201 being wrongly rejected) counts as success.
+export async function testAccess(
+  url: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  // 1. iCal feed / share link: a GET returning an iCalendar body is a success.
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      headers: basicAuthHeader() ? { Authorization: basicAuthHeader()! } : {},
+    });
+    const text = await res.text();
+    if (isCalDavOk(res.status) && text.includes("BEGIN:VCALENDAR")) {
+      return { ok: true, status: res.status };
+    }
+  } catch {
+    // fall through to CalDAV probe
+  }
+
+  // 2. CalDAV collection: a PROPFIND Depth 0 with the service credentials.
+  const auth = basicAuthHeader();
+  if (!auth) {
+    return {
+      ok: false,
+      status: 0,
+      error:
+        "URL non lisible en flux iCal, et CalDAV non configuré (CALDAV_USER / CALDAV_PASSWORD manquants)",
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "PROPFIND",
+      headers: {
+        Authorization: auth,
+        Depth: "0",
+        "Content-Type": "application/xml; charset=utf-8",
+      },
+      body: `<?xml version="1.0" encoding="utf-8" ?>
+<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype /><d:displayname /></d:prop></d:propfind>`,
+    });
+  } catch (e) {
+    return { ok: false, status: 0, error: String(e) };
+  }
+  if (isCalDavOk(res.status)) return { ok: true, status: res.status };
+  const text = await res.text().catch(() => "");
+  return { ok: false, status: res.status, error: text.slice(0, 300) };
+}
+
+// Keep events whose start instant falls within [start, end).
+function filterByWindow(events: CalEvent[], start: Date, end: Date): CalEvent[] {
+  const lo = start.getTime();
+  const hi = end.getTime();
+  return events.filter((e) => {
+    if (!e.start) return false;
+    const t = e.start.getTime();
+    return t >= lo && t < hi;
+  });
+}
+
+// Fetch events overlapping [start, end] from a calendar URL. Two shapes are
+// supported, tried in order:
+//   1. An iCal feed / OX share link (GET → text/calendar with the whole
+//      VCALENDAR). No auth needed — this is what "Partage → lien public" gives.
+//      We parse the full feed and filter the window client-side.
+//   2. A true CalDAV collection (REPORT calendar-query, Basic auth), used as a
+//      fallback when the GET doesn't return an iCalendar body.
 export async function fetchEvents(
   url: string,
   start: Date,
   end: Date,
 ): Promise<CalDavResult> {
+  // 1. Try the plain GET iCal feed first (share links, webcal exports).
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      // Send Basic auth if configured — harmless for anonymous share links,
+      // required for an authenticated iCal export.
+      headers: basicAuthHeader() ? { Authorization: basicAuthHeader()! } : {},
+    });
+    const text = await res.text();
+    if (isCalDavOk(res.status) && text.includes("BEGIN:VCALENDAR")) {
+      const events = filterByWindow(parseVEvents(text), start, end);
+      return { ok: true, status: res.status, events };
+    }
+    // A 2xx that isn't iCal (e.g. an HTML page) means this isn't a feed — fall
+    // through to the CalDAV path below.
+  } catch {
+    // Network error on GET — try CalDAV before giving up.
+  }
+
+  // 2. Fall back to a CalDAV REPORT calendar-query (needs Basic auth).
   const auth = basicAuthHeader();
   if (!auth) {
     return {
       ok: false,
       status: 0,
       events: [],
-      error: "CalDAV non configuré: CALDAV_USER / CALDAV_PASSWORD manquants",
+      error:
+        "URL non lisible en flux iCal, et CalDAV non configuré (CALDAV_USER / CALDAV_PASSWORD manquants)",
     };
   }
   let res: Response;
@@ -98,7 +197,7 @@ export async function fetchEvents(
       error: text.slice(0, 500),
     };
   }
-  const events = parseMultistatus(text);
+  const events = filterByWindow(parseMultistatus(text), start, end);
   return { ok: true, status: res.status, events };
 }
 

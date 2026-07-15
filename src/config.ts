@@ -116,6 +116,12 @@ export const config = {
     // (section 7.1 of docs/rappels-calendrier.md). Remove once inscription
     // stores per-user URLs.
     pocUrl: process.env["CALDAV_POC_URL"],
+    // Link shown to the user in the inscription DM, pointing to the La Suite
+    // page where they find their CalDAV URL.
+    helpUrl: optional(
+      "CALDAV_HELP_URL",
+      "https://messagerie.numerique.gouv.fr/appsuite/",
+    ),
   },
 } as const;
 
