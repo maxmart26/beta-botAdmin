@@ -1092,6 +1092,25 @@ export class MatrixConnector {
         );
         await this.sendReaction(roomId, userEventId, result.reaction);
         await this.sendMessage(roomId, result.message, userEventId, threadRoot);
+        // `/salon create … --liste <liste>`: room created, now invite the list
+        // via the same n8n flow as /invite, into the fresh room.
+        if (result.inviteListe && result.createdRoomId) {
+          const inv = await forwardMembresCommand({
+            command: "/invite",
+            text: `/invite ${result.inviteListe}`,
+            sender,
+            roomId,
+            isDM,
+            managedSpace: config.matrix.managedSpace,
+            liste: result.inviteListe,
+            targetRoomId: result.createdRoomId,
+            targetLabel: result.targetLabel ?? "le salon",
+            homeserver: config.matrix.homeserver,
+          });
+          await this.sendMessage(roomId, inv.message, userEventId, threadRoot);
+          record({ user: sender, room: roomId, kind: "slash", text, status: "ok", detail: `salon+liste n8n ${inv.reaction}` });
+          return;
+        }
         const status: "ok" | "error" = result.reaction === "❌" || result.reaction === "⛔" ? "error" : "ok";
         record({ user: sender, room: roomId, kind: "slash", text, status, detail: result.reaction });
         return;

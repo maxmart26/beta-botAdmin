@@ -12,6 +12,11 @@ const MODERATOR_POWER_LEVEL = 50;
 export interface RoomCmdResult {
   reaction: string;
   message: string;
+  // Set by `/salon create … --liste <liste>`: the connector then triggers the
+  // n8n invite flow for that list into the freshly-created room.
+  createdRoomId?: string;
+  inviteListe?: string;
+  targetLabel?: string;
 }
 
 interface SpaceChild {
@@ -401,6 +406,8 @@ async function createRoom(
   return {
     reaction: "✅",
     message: `🏠 Salon **${name}** créé (${encrypted ? "privé, chiffré" : "public, non chiffré"}) et rattaché à ${where}.\nID : \`${roomId}\``,
+    createdRoomId: roomId,
+    targetLabel: `le salon **${name}**`,
   };
 }
 
@@ -667,6 +674,7 @@ function helpMessage(): RoomCmdResult {
 | \`/salon create <nom>\` | Crée un salon (chiffré), t'y invite, et le rattache à l'espace géré |
 | \`/salon create <nom> --clair\` | Idem mais salon **non chiffré** (le chiffrement ne peut pas être retiré ensuite) |
 | \`/salon create <nom> <espace>\` | Idem, mais rattache le salon au sous-espace **<espace>** (nom ou ID). Si le nom de l'espace contient des espaces, mets-le entre guillemets : \`/salon create <nom> "Pole Tech"\` |
+| \`/salon create <nom> --liste <liste>\` | Idem, et **invite** tous les membres de la liste **<liste>** (voir \`/liste-membre\`) dans le salon créé |
 | \`/salon delete <nom>\` | Ferme le salon de l'espace géré : détache + expulse les membres + le bot quitte |
 | \`/salon delete <nom> <espace>\` | Idem, mais cible le salon situé dans le sous-espace **<espace>** (pour lever l'ambiguïté si le même nom existe ailleurs). Espace avec des espaces : entre guillemets |
 
@@ -867,11 +875,28 @@ export async function handleRoomsCommand(
         if (!rawArg)
           return {
             reaction: "❌",
-            message: "❌ Usage : `/salon create <nom> [\"espace\"] [--clair]`",
+            message:
+              "❌ Usage : `/salon create <nom> [\"espace\"] [--clair] [--liste <liste>]`",
           };
+        // Extract `--liste <nom>` (optional): after creation, the connector
+        // invites that member list via n8n. Pulled out first so its value never
+        // lands in the room/espace name.
+        let inviteListe: string | null = null;
+        let argAfterListe = rawArg;
+        const listeMatch = rawArg.match(
+          /(?:^|\s)--liste\s+("[^"]+"|'[^']+'|\S+)/i,
+        );
+        if (listeMatch) {
+          inviteListe = listeMatch[1]!.replace(/^["']|["']$/g, "");
+          argAfterListe = (
+            rawArg.slice(0, listeMatch.index) +
+            " " +
+            rawArg.slice(listeMatch.index! + listeMatch[0].length)
+          ).trim();
+        }
         // `--clair` (anywhere in the args) creates an unencrypted room. Strip
         // the flag out before parsing name/espace so it never lands in either.
-        const tokensRaw = rawArg.split(/\s+/);
+        const tokensRaw = argAfterListe.split(/\s+/).filter(Boolean);
         const encrypted = !tokensRaw.some(
           (t) => t.toLowerCase() === "--clair",
         );
@@ -920,9 +945,10 @@ export async function handleRoomsCommand(
         if (!roomName)
           return {
             reaction: "❌",
-            message: "❌ Usage : `/salon create <nom> [\"espace\"] [--clair]`",
+            message:
+              "❌ Usage : `/salon create <nom> [\"espace\"] [--clair] [--liste <liste>]`",
           };
-        return await createRoom(
+        const created = await createRoom(
           client,
           targetSpaceId,
           roomName,
@@ -931,6 +957,12 @@ export async function handleRoomsCommand(
           targetSpaceName,
           encrypted,
         );
+        // If a list was requested and the room was created, tag the result so
+        // the connector triggers the n8n invite flow into the new room.
+        if (inviteListe && created.createdRoomId) {
+          created.inviteListe = inviteListe;
+        }
+        return created;
       }
       case "delete":
       case "close":
