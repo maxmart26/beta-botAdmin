@@ -27,7 +27,7 @@ import { testAccess } from "../connectors/caldav.js";
 import { upsertInscription, setStatut } from "../tools/rappels-store.js";
 import { runReminderTick } from "../tools/rappels-scheduler.js";
 import { forwardMembresCommand } from "../connectors/n8n.js";
-import { parseInviteArgs } from "../commands/invite.js";
+import { parseInviteArgs, isInviteHelp, buildInviteHelp } from "../commands/invite.js";
 import { resolveInviteTarget, isMemberOf } from "../commands/rooms.js";
 import { buildHelp, buildOpsHelp } from "../tools/help.js";
 
@@ -1140,6 +1140,13 @@ export class MatrixConnector {
       // /invite: the bot parses + resolves the target room/space to an id, then
       // forwards to n8n which reads the list and performs the invitations.
       if (n8nVerb === "/invite") {
+        // `/invite`, `/invite help`, `/invite aide` → help card (no n8n call).
+        if (isInviteHelp(text)) {
+          await this.sendReaction(roomId, userEventId, "📖");
+          await this.sendMessage(roomId, buildInviteHelp(), userEventId, threadRoot);
+          record({ user: sender, room: roomId, kind: "slash", text, status: "ok", detail: "invite-help" });
+          return;
+        }
         const parsed = parseInviteArgs(text);
         if (!parsed) {
           await this.sendReaction(roomId, userEventId, "❌");

@@ -8,6 +8,33 @@ export interface InviteArgs {
   target: string;
 }
 
+// True for `/invite`, `/invite help` or `/invite aide` (show the help card).
+export function isInviteHelp(text: string): boolean {
+  const arg = text.replace(/^\/invite\s*/i, "").trim().toLowerCase();
+  return arg === "" || arg === "help" || arg === "aide";
+}
+
+export function buildInviteHelp(): string {
+  return [
+    "# `/invite` — inviter une liste de membres",
+    "",
+    "Invite tous les membres d'une **liste** dans un salon ou un espace.",
+    "",
+    "| Commande | Effet |",
+    "|---|---|",
+    "| `/invite <liste> --salon <nom>` | Invite la liste dans le **salon** <nom> |",
+    "| `/invite <liste> --espace <nom>` | Invite la liste dans l'**espace** <nom> |",
+    "| `/invite help` | Affiche cette aide |",
+    "",
+    "- Le salon/espace est cherché **sous l'espace géré** (par nom, ou ID `!…:serveur`).",
+    "- Tu dois être **membre** du salon/espace ciblé.",
+    "- Les listes se gèrent dans Grist ; vois les membres avec `/liste-membre <liste>`.",
+    "- Un nom avec des espaces : entre guillemets — `/invite \"Pole Tech\" --espace \"Fabrique\"`.",
+    "",
+    "**Exemple** : `/invite pole-tech --salon Coordination`",
+  ].join("\n");
+}
+
 // Returns null when the syntax doesn't match. Values may be quoted.
 export function parseInviteArgs(text: string): InviteArgs | null {
   const rawArg = text.replace(/^\/invite\s*/i, "").trim();
