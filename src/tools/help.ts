@@ -53,16 +53,6 @@ function buildBotHelp(): string {
       ? cmdRooms.map((r) => `\`${r}\``).join(", ")
       : "(aucune restriction, partout)";
 
-  const dimailRooms = config.matrix.dimailRooms;
-  const dimailWhere =
-    dimailRooms.length > 0
-      ? config.matrix.commandRoomsLabel &&
-        dimailRooms.length === cmdRooms.length &&
-        dimailRooms.every((r) => cmdRooms.includes(r))
-        ? `\`${config.matrix.commandRoomsLabel}\``
-        : dimailRooms.map((r) => `\`${r}\``).join(", ")
-      : "(désactivés — aucune room listée dans MATRIX_DIMAIL_ROOMS)";
-
   const dimailDomain =
     config.dimail.domain || "(non configuré, DIMAIL_DOMAIN vide)";
 
@@ -79,11 +69,9 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 ## Commandes slash
 
 ### \`/help\` (ou \`/aide\`)
-- **Où** : ${cmdWhere}
 - **Effet** : affiche cette aide — toutes les commandes et leurs paramètres.
 
 ### \`/emails\` — gestion des mailing lists
-- **Où** : ${dimailWhere}
 - **Domaine par défaut** : ${dimailDomain}
 
 | Sous-commande | Description |
@@ -105,7 +93,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 - \`@betabot /emails join contact@beta.gouv.fr jean.louis@beta.gouv.fr\`
 
 ### \`/salon\` — gestion des salons d'un espace
-- **Où** : ${cmdWhere}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
@@ -118,7 +105,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 | \`@betabot /salon delete <nom> <espace>\` | modérateur+ du salon ciblé | Idem mais cible le salon dans le sous-espace **<espace>** (lève l'ambiguïté ; espace avec espaces = entre guillemets) |
 
 ### \`/espace\` — gestion des sous-espaces
-- **Où** : ${cmdWhere}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
@@ -129,7 +115,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 | \`@betabot /espace delete <nom>\` | utilisateur autorisé, en MP | Supprime un sous-espace **vide** (refusé s'il contient encore des salons ou sous-espaces) |
 
 ### \`/liste-membre\` — listes de membres
-- **Où** : ${cmdWhere}
 
 | Sous-commande | Description |
 |---|---|
@@ -138,7 +123,6 @@ Je suis un bot **à commandes** : je ne discute pas en langage naturel. Je ne r�
 Les listes sont gérées dans Grist (table \`Membres\`).
 
 ### \`/invite\` — inviter une liste dans un salon/espace
-- **Où** : ${cmdWhere}
 
 | Sous-commande | Qui | Description |
 |---|---|---|
