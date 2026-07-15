@@ -14,8 +14,16 @@ export interface N8nCommandPayload {
   sender: string;
   roomId: string;
   isDM: boolean;
-  // The managed space id, so n8n can resolve room/space names under it.
+  // The managed space id (context for n8n).
   managedSpace?: string;
+  // /invite only: the bot pre-parses and resolves the target, so n8n just
+  // reads the list and invites into `targetRoomId`.
+  liste?: string;
+  targetRoomId?: string;
+  // Human-readable target ("le salon **X**") for n8n's reply.
+  targetLabel?: string;
+  // Matrix homeserver base URL, so n8n can call the invite endpoint.
+  homeserver?: string;
 }
 
 // What n8n is expected to return. `reaction` is optional (defaults to a neutral

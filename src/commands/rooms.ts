@@ -176,6 +176,74 @@ async function resolveSubSpace(
   return null;
 }
 
+// Find a room (non-space child) anywhere under the managed space by ID or name.
+// BFS the whole tree so a room nested in a sub-espace resolves too. Returns
+// { room, ambiguous }: ambiguous when several rooms share the name.
+async function resolveRoom(
+  client: MatrixClient,
+  managedSpaceId: string,
+  idOrName: string,
+): Promise<{ room: SpaceChild | null; ambiguous: boolean }> {
+  const needle = idOrName.toLowerCase();
+  const byId = idOrName.startsWith("!");
+  const matches: SpaceChild[] = [];
+  const visited = new Set<string>([managedSpaceId]);
+  let frontier = await listChildren(client, managedSpaceId);
+  while (frontier.length) {
+    const next: SpaceChild[] = [];
+    for (const c of frontier) {
+      if (visited.has(c.roomId)) continue;
+      visited.add(c.roomId);
+      if (c.isSpace) {
+        next.push(...(await listChildren(client, c.roomId)));
+        continue;
+      }
+      if (byId ? c.roomId.toLowerCase() === needle : c.name.toLowerCase() === needle) {
+        matches.push(c);
+      }
+    }
+    frontier = next;
+  }
+  if (matches.length === 0) return { room: null, ambiguous: false };
+  if (matches.length > 1) return { room: null, ambiguous: true };
+  return { room: matches[0]!, ambiguous: false };
+}
+
+// Whether a user is a joined member of a room/space (exported for /invite).
+export async function isMemberOf(
+  client: MatrixClient,
+  roomId: string,
+  userId: string,
+): Promise<boolean> {
+  return isRoomMember(client, roomId, userId);
+}
+
+// Resolve the target of `/invite … --salon|--espace <name>` to a room ID under
+// the managed space. Returns { roomId, label } or { error } (a ready-to-send
+// message). The bot resolves the target so n8n only has to invite into an id.
+export async function resolveInviteTarget(
+  client: MatrixClient,
+  managedSpaceId: string | undefined,
+  kind: "salon" | "espace",
+  name: string,
+): Promise<{ roomId: string; label: string } | { error: string }> {
+  if (!managedSpaceId) {
+    return { error: "⛔ `MATRIX_MANAGED_SPACE` n'est pas configuré." };
+  }
+  if (kind === "espace") {
+    const sp = await resolveSubSpace(client, managedSpaceId, name);
+    if (!sp) return { error: `❌ Aucun espace **${name}**. Tape \`/espace list\`.` };
+    return { roomId: sp.roomId, label: `l'espace **${sp.name}**` };
+  }
+  const { room, ambiguous } = await resolveRoom(client, managedSpaceId, name);
+  if (ambiguous)
+    return {
+      error: `⚠️ Plusieurs salons s'appellent **${name}**. Précise l'ID : \`--salon !id:serveur\`.`,
+    };
+  if (!room) return { error: `❌ Aucun salon **${name}**. Tape \`/salon list\`.` };
+  return { roomId: room.roomId, label: `le salon **${room.name}**` };
+}
+
 // Parse a `<nom> [espace]` argument into a room name and an optional target
 // espace. A **quoted** trailing segment is always the espace, so names that
 // contain spaces work (e.g. `Mon Salon "Pole Tech"`). A single quoted value

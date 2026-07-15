@@ -27,6 +27,8 @@ import { testAccess } from "../connectors/caldav.js";
 import { upsertInscription, setStatut } from "../tools/rappels-store.js";
 import { runReminderTick } from "../tools/rappels-scheduler.js";
 import { forwardMembresCommand } from "../connectors/n8n.js";
+import { parseInviteArgs } from "../commands/invite.js";
+import { resolveInviteTarget, isMemberOf } from "../commands/rooms.js";
 import { buildHelp, buildOpsHelp } from "../tools/help.js";
 
 // Publicly advertised commands (shown in /help, the generic notice and the
@@ -41,10 +43,6 @@ const KNOWN_COMMANDS = [
   "/liste-membre",
   "/invite",
 ] as const;
-
-// Commands handled by the n8n webhook (member lists): the bot only forwards
-// them and posts n8n's reply. Matched by exact verb or "<verb> …".
-const N8N_COMMANDS = ["/liste-membre", "/liste-membres", "/invite"] as const;
 
 function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
@@ -1118,10 +1116,9 @@ export class MatrixConnector {
         return;
       }
 
-      // Member-list commands are owned by n8n: forward the raw command and
-      // post whatever n8n returns (see connectors/n8n.ts).
+      // /liste-membre → forward the raw command to n8n as-is.
       const n8nVerb = text.split(/\s+/)[0] ?? "";
-      if ((N8N_COMMANDS as readonly string[]).includes(n8nVerb)) {
+      if (n8nVerb === "/liste-membre" || n8nVerb === "/liste-membres") {
         const reply = await forwardMembresCommand({
           command: n8nVerb,
           text,
@@ -1136,6 +1133,65 @@ export class MatrixConnector {
           reply.reaction === "✅" || reply.reaction === "📋" || reply.reaction === "📭"
             ? "ok"
             : "error";
+        record({ user: sender, room: roomId, kind: "slash", text, status, detail: `n8n ${reply.reaction}` });
+        return;
+      }
+
+      // /invite: the bot parses + resolves the target room/space to an id, then
+      // forwards to n8n which reads the list and performs the invitations.
+      if (n8nVerb === "/invite") {
+        const parsed = parseInviteArgs(text);
+        if (!parsed) {
+          await this.sendReaction(roomId, userEventId, "❌");
+          await this.sendMessage(
+            roomId,
+            "❌ Usage : `/invite <liste> --salon <nom>` ou `/invite <liste> --espace <nom>`",
+            userEventId,
+            threadRoot,
+          );
+          record({ user: sender, room: roomId, kind: "slash", text, status: "error", detail: "invite bad-syntax" });
+          return;
+        }
+        const target = await resolveInviteTarget(
+          this.client,
+          config.matrix.managedSpace,
+          parsed.kind,
+          parsed.target,
+        );
+        if ("error" in target) {
+          await this.sendReaction(roomId, userEventId, "❌");
+          await this.sendMessage(roomId, target.error, userEventId, threadRoot);
+          record({ user: sender, room: roomId, kind: "slash", text, status: "error", detail: "invite target-unresolved" });
+          return;
+        }
+        // Only a member of the target may bulk-invite into it.
+        if (!(await isMemberOf(this.client, target.roomId, sender))) {
+          await this.sendReaction(roomId, userEventId, "⛔");
+          await this.sendMessage(
+            roomId,
+            `⛔ Tu n'es pas membre de ${target.label}, tu ne peux pas y inviter.`,
+            userEventId,
+            threadRoot,
+          );
+          record({ user: sender, room: roomId, kind: "slash", text, status: "refused", detail: "invite not-member" });
+          return;
+        }
+        const reply = await forwardMembresCommand({
+          command: "/invite",
+          text,
+          sender,
+          roomId,
+          isDM,
+          managedSpace: config.matrix.managedSpace,
+          liste: parsed.liste,
+          targetRoomId: target.roomId,
+          targetLabel: target.label,
+          homeserver: config.matrix.homeserver,
+        });
+        await this.sendReaction(roomId, userEventId, reply.reaction);
+        await this.sendMessage(roomId, reply.message, userEventId, threadRoot);
+        const status: "ok" | "error" =
+          reply.reaction === "✅" || reply.reaction === "📋" ? "ok" : "error";
         record({ user: sender, room: roomId, kind: "slash", text, status, detail: `n8n ${reply.reaction}` });
         return;
       }
