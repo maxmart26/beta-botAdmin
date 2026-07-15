@@ -12,12 +12,32 @@ import { handleEmailsCommand } from "../commands/emails.js";
 import { handleRoomsCommand, handleSpacesCommand } from "../commands/rooms.js";
 import { record, query, formatHistory } from "../commands/history.js";
 import { buildCommandOnlyNotice } from "../commands/notice.js";
+import {
+  PendingInscriptions,
+  extractCalDavUrl,
+  buildWelcomeMessage,
+  buildStartedInRoomMessage,
+  buildNoUrlMessage,
+  buildSuccessMessage,
+  buildAccessErrorMessage,
+  buildStopMessage,
+  buildStopNotFoundMessage,
+} from "../commands/rappels.js";
+import { testAccess } from "../connectors/caldav.js";
+import { upsertInscription, setStatut } from "../tools/rappels-store.js";
+import { runReminderTick } from "../tools/rappels-scheduler.js";
 import { buildHelp, buildOpsHelp } from "../tools/help.js";
 
 // Publicly advertised commands (shown in /help, the generic notice and the
 // "unknown command" hint). `/historique` is admin-only and intentionally left
 // out — it still works (handled explicitly below) but isn't advertised.
-const KNOWN_COMMANDS = ["/help", "/emails", "/salon", "/espace"] as const;
+const KNOWN_COMMANDS = [
+  "/help",
+  "/emails",
+  "/salon",
+  "/espace",
+  "/rappels-calendrier",
+] as const;
 
 function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
@@ -244,6 +264,8 @@ export class MatrixConnector {
   private activeBotThreads = new Set<string>();
   private dmRooms = new Set<string>();
   private pendingVerif = new Map<string, VerifState>();
+  private pendingRappels = new PendingInscriptions();
+  private reminderTimer?: ReturnType<typeof setInterval>;
   private startupTs = Date.now();
 
   constructor() {}
@@ -338,10 +360,65 @@ export class MatrixConnector {
 
     await this.loadDirectRooms();
 
+    this.startReminderScheduler();
+
     process.on("SIGINT", () => {
+      if (this.reminderTimer) clearInterval(this.reminderTimer);
       this.client.stop();
       process.exit(0);
     });
+  }
+
+  // Public wrapper so the reminder scheduler can post messages.
+  async sendRoomMessage(roomId: string, text: string): Promise<void> {
+    await this.sendMessage(roomId, text);
+  }
+
+  // Send a one-off notice to the first configured admin, via DM.
+  private async notifyAdmin(text: string): Promise<void> {
+    const admin = config.matrix.adminUsers[0];
+    if (!admin) return;
+    try {
+      const dm = await this.client.dms.getOrCreateDm(admin);
+      this.dmRooms.add(dm);
+      await this.sendMessage(dm, text);
+    } catch (err) {
+      console.error("[Matrix] notifyAdmin failed:", err);
+    }
+  }
+
+  // Start the meeting-reminder scheduler (docs/rappels-calendrier.md §5.2): a
+  // tick every `intervalMin` minutes. Runs one tick shortly after startup too.
+  private startReminderScheduler(): void {
+    const cfg = config.rappels;
+    if (!cfg.enabled) {
+      console.log("[rappels] scheduler désactivé (RAPPELS_ENABLED=false)");
+      return;
+    }
+    console.log(
+      `[rappels] scheduler actif: tick ${cfg.intervalMin} min, lead ${cfg.leadMin} min, fenêtre ${cfg.windowMin} min, dryRun=${cfg.dryRun}`,
+    );
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await runReminderTick({
+          now: new Date(),
+          leadMin: cfg.leadMin,
+          windowMin: cfg.windowMin,
+          dryRun: cfg.dryRun,
+          contact: config.matrix.contact,
+          send: (roomId, text) => this.sendRoomMessage(roomId, text),
+          notifyAdmin: (text) => this.notifyAdmin(text),
+        });
+        console.log(
+          `[rappels] tick: ${res.inscriptions} inscription(s), ${res.events} event(s), ${res.sent} envoyé(s), ${res.broken} cassé(s)`,
+        );
+      } catch (err) {
+        console.error("[rappels] tick error:", err);
+      }
+    };
+    // First tick after a short delay (let sync settle), then on the interval.
+    setTimeout(() => void tick(), 15_000);
+    this.reminderTimer = setInterval(() => void tick(), cfg.intervalMin * 60_000);
   }
 
   // Intercept verification to-device events before the Rust engine processes them
@@ -873,9 +950,10 @@ export class MatrixConnector {
 
     const userEventId = event.event_id as string;
 
-    // OPS rooms: ONLY `/help` (or `/aide`) works — it shows the OPS-request
-    // help, open to everyone. Every other message (other commands, mentions,
-    // natural language) is ignored silently. Checked before all dispatch.
+    // OPS rooms: only `/help` (or `/aide`) and `/rappels-calendrier` work.
+    // `/help` shows the OPS-request help; `/rappels-calendrier` starts the
+    // reminder inscription (its whole point is to be typed in « Demande d'OPS »,
+    // docs/rappels-calendrier.md §5.1). Every other message is ignored silently.
     if (config.matrix.opsRooms.includes(roomId)) {
       const isHelp =
         isSlashCommand &&
@@ -883,10 +961,18 @@ export class MatrixConnector {
           text === "/aide" ||
           text.startsWith("/help ") ||
           text.startsWith("/aide "));
+      const isRappels =
+        isSlashCommand &&
+        (text === "/rappels-calendrier" ||
+          text === "/rappels" ||
+          text.startsWith("/rappels-calendrier ") ||
+          text.startsWith("/rappels "));
       if (isHelp) {
         await this.sendReaction(roomId, userEventId, "📖");
         await this.sendMessage(roomId, buildOpsHelp(), userEventId, threadRoot);
         record({ user: sender, room: roomId, kind: "slash", text, status: "ok", detail: "ops-help" });
+      } else if (isRappels) {
+        await this.startRappelsInscription(roomId, sender, userEventId, threadRoot);
       }
       return;
     }
@@ -1025,6 +1111,44 @@ export class MatrixConnector {
         return;
       }
 
+      if (
+        text === "/rappels-calendrier" ||
+        text === "/rappels" ||
+        text.startsWith("/rappels-calendrier ") ||
+        text.startsWith("/rappels ")
+      ) {
+        await this.startRappelsInscription(roomId, sender, userEventId, threadRoot);
+        return;
+      }
+
+      if (text === "/rappels-stop" || text.startsWith("/rappels-stop ")) {
+        this.pendingRappels.clear(sender);
+        let wasSubscribed = false;
+        try {
+          wasSubscribed = await setStatut(sender, "désactivé");
+        } catch (err) {
+          console.error("[Matrix] /rappels-stop: Grist update failed:", err);
+          await this.sendReaction(roomId, userEventId, "⚠️");
+          await this.sendMessage(
+            roomId,
+            "⚠️ Erreur pendant la désinscription, réessaie plus tard.",
+            userEventId,
+            threadRoot,
+          );
+          record({ user: sender, room: roomId, kind: "slash", text, status: "error", detail: "rappels-stop grist-failed" });
+          return;
+        }
+        await this.sendReaction(roomId, userEventId, "🔕");
+        await this.sendMessage(
+          roomId,
+          wasSubscribed ? buildStopMessage() : buildStopNotFoundMessage(),
+          userEventId,
+          threadRoot,
+        );
+        record({ user: sender, room: roomId, kind: "slash", text, status: "ok", detail: wasSubscribed ? "rappels-stop" : "rappels-stop not-found" });
+        return;
+      }
+
       const unknownCmd = text.split(/\s+/)[0] || "/?";
       const suggestion = suggestCommand(unknownCmd);
       const cmdList = KNOWN_COMMANDS.map((c) => `\`${c}\``).join(", ");
@@ -1036,6 +1160,14 @@ export class MatrixConnector {
         threadRoot,
       );
       record({ user: sender, room: roomId, kind: "slash", text, status: "unknown", detail: unknownCmd });
+      return;
+    }
+
+    // Reminder inscription: a non-slash message in a DM from someone who ran
+    // /rappels-calendrier and owes us their CalDAV URL. Captured before the
+    // generic notice so their URL reply is handled instead of refused.
+    if (isDM && this.pendingRappels.isAwaiting(sender, roomId, Date.now())) {
+      await this.handleRappelsUrlReply(roomId, sender, body, userEventId);
       return;
     }
 
@@ -1114,6 +1246,100 @@ export class MatrixConnector {
 
   private async isDMRoom(roomId: string): Promise<boolean> {
     return this.dmRooms.has(roomId);
+  }
+
+  // Start the reminder inscription (docs/rappels-calendrier.md §5.1): open a DM
+  // with the requester, ask for their CalDAV URL, and remember we're waiting
+  // for their reply in that DM.
+  private async startRappelsInscription(
+    roomId: string,
+    sender: string,
+    userEventId: string,
+    threadRoot: string,
+  ): Promise<void> {
+    let dmRoomId: string;
+    try {
+      dmRoomId = await this.client.dms.getOrCreateDm(sender);
+    } catch (err) {
+      console.error("[Matrix] /rappels-calendrier: DM creation failed:", err);
+      await this.sendReaction(roomId, userEventId, "⚠️");
+      await this.sendMessage(
+        roomId,
+        "⚠️ Impossible d'ouvrir un message privé avec toi. Vérifie que tu acceptes les invitations du bot, puis réessaie.",
+        userEventId,
+        threadRoot,
+      );
+      record({ user: sender, room: roomId, kind: "slash", text: "/rappels-calendrier", status: "error", detail: "dm-create-failed" });
+      return;
+    }
+    this.dmRooms.add(dmRoomId);
+    this.pendingRappels.start(sender, dmRoomId, Date.now());
+    await this.sendMessage(
+      dmRoomId,
+      buildWelcomeMessage(config.caldav.helpUrl, config.caldav.user ?? "le compte du bot"),
+    );
+    await this.sendReaction(roomId, userEventId, "📨");
+    if (dmRoomId !== roomId) {
+      await this.sendMessage(
+        roomId,
+        buildStartedInRoomMessage(),
+        userEventId,
+        threadRoot,
+      );
+    }
+    record({ user: sender, room: roomId, kind: "slash", text: "/rappels-calendrier", status: "ok", detail: "dm-sent" });
+  }
+
+  // Handle a CalDAV URL the user sent in their DM while we were awaiting it.
+  // Tests access with the service credentials; on success stores the
+  // inscription as `actif`, otherwise reports an error and stores nothing.
+  private async handleRappelsUrlReply(
+    dmRoomId: string,
+    sender: string,
+    body: string,
+    userEventId: string,
+  ): Promise<void> {
+    const url = extractCalDavUrl(body);
+    if (!url) {
+      await this.sendMessage(dmRoomId, buildNoUrlMessage());
+      record({ user: sender, room: dmRoomId, kind: "dm", text: "caldav-url", status: "error", detail: "no-url" });
+      return;
+    }
+    const test = await testAccess(url);
+    if (!test.ok) {
+      this.pendingRappels.clear(sender);
+      await this.sendReaction(dmRoomId, userEventId, "⛔");
+      await this.sendMessage(
+        dmRoomId,
+        buildAccessErrorMessage(config.caldav.user ?? "le compte du bot", config.matrix.contact),
+      );
+      record({ user: sender, room: dmRoomId, kind: "dm", text: "caldav-url", status: "error", detail: `caldav ${test.status}` });
+      return;
+    }
+    const now = new Date();
+    try {
+      await upsertInscription({
+        matrixUserId: sender,
+        calDavUrl: url,
+        roomIdDM: dmRoomId,
+        statut: "actif",
+        dernierTest: now,
+        dateInscription: now,
+      });
+    } catch (err) {
+      console.error("[Matrix] /rappels-calendrier: Grist upsert failed:", err);
+      await this.sendReaction(dmRoomId, userEventId, "⚠️");
+      await this.sendMessage(
+        dmRoomId,
+        buildAccessErrorMessage(config.caldav.user ?? "le compte du bot", config.matrix.contact),
+      );
+      record({ user: sender, room: dmRoomId, kind: "dm", text: "caldav-url", status: "error", detail: "grist-upsert-failed" });
+      return;
+    }
+    this.pendingRappels.clear(sender);
+    await this.sendReaction(dmRoomId, userEventId, "✅");
+    await this.sendMessage(dmRoomId, buildSuccessMessage());
+    record({ user: sender, room: dmRoomId, kind: "dm", text: "caldav-url", status: "ok" });
   }
 
   private async sendMessage(
