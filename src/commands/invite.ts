@@ -116,7 +116,8 @@ export function unknownInviteFlags(text: string): string[] {
 // order-independent:
 //   --domaine <domaine>             → only that domaine within the startup
 //   --moderateur                    → also promote them to moderator (power 50)
-//   --simuler | --dry-run           → rehearse only: never contacts n8n
+//   --simuler | --dry-run           → rehearse: n8n lists who would be
+//                                     invited, without inviting anyone
 //   --salon <nom>                   → that room, by name or id
 //   --espace <!id:serveur>          → that space, by ID only
 //   --espace       (no value)       → the space holding the current room
